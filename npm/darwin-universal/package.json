@@ -1,0 +1,15 @@
+{
+  "name": "@herox/lib-darwin-universal",
+  "version": "0.0.0",
+  "os": [
+    "darwin"
+  ],
+  "main": "lib.darwin-universal.node",
+  "files": [
+    "lib.darwin-universal.node"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  }
+}
