@@ -3,12 +3,25 @@
 #[macro_use]
 extern crate napi_derive;
 
+use std::{time::Duration, thread};
+
 use enigo::{
   Button,
   Direction::{Click, Press, Release},
   Enigo, Key as EnigoKey, Keyboard, Mouse, Settings,
 };
 use napi::{bindgen_prelude::FromNapiValue, JsObject, JsUnknown, ValueType};
+use rand::Rng;
+
+pub fn ease_out_quad(t: f64) -> f64 {
+    let t_clamped = t.max(0.0).min(1.0);
+    t_clamped * (2.0 - t_clamped)
+}
+
+pub fn ease_out_cubic(t: f64) -> f64 {
+    let t_clamped = t.max(0.0).min(1.0);
+    1.0 - (1.0 - t_clamped).powi(3)
+}
 
 #[napi]
 pub struct Position {
@@ -22,6 +35,36 @@ impl Position {
   pub fn new(x: i32, y: i32) -> Self {
     Position { x, y }
   }
+
+  pub fn interpolate(start: &Position, end: &Position, t: f64) -> Self {
+        let start_x_f64 = start.x as f64;
+        let start_y_f64 = start.y as f64;
+        let end_x_f64 = end.x as f64;
+        let end_y_f64 = end.y as f64;
+
+        let x = start_x_f64 + t * (end_x_f64 - start_x_f64);
+        let y = start_y_f64 + t * (end_y_f64 - start_y_f64);
+
+        Position::new(x.round() as i32, y.round() as i32)
+    }
+
+    pub fn distance(position1: &Position, position2: &Position) -> u32 {
+        let dx = (position1.x - position2.x) as i64;
+        let dy = (position1.y - position2.y) as i64;
+        (dx.pow(2) + dy.pow(2)).isqrt() as u32
+    }
+
+    pub fn from_polar(angle_turns: f64, magnitude: f64) -> Self {
+        let angle_rad = angle_turns * 2.0 * std::f64::consts::PI;
+
+        let x = magnitude * angle_rad.cos();
+        let y = magnitude * angle_rad.sin();
+        Position::new(x.round() as i32, y.round() as i32)
+    }
+
+    pub fn subtract(position1: &Position, position2: &Position) -> Self {
+        Position::new(position1.x - position2.x, position1.y - position2.y)
+    }
 }
 
 impl From<(i32, i32)> for Position {
@@ -80,8 +123,6 @@ pub enum SpecialKey {
   Add,
   Alt,
   Backspace,
-  Break,
-  Begin,
   Cancel,
   CapsLock,
   Clear,
@@ -118,18 +159,6 @@ pub enum SpecialKey {
   F22,
   F23,
   F24,
-  F25,
-  F26,
-  F27,
-  F28,
-  F29,
-  F30,
-  F31,
-  F32,
-  F33,
-  F34,
-  F35,
-  Find,
   Hangul,
   Hanja,
   Help,
@@ -138,7 +167,6 @@ pub enum SpecialKey {
   Kanji,
   LControl,
   LeftArrow,
-  Linefeed,
   LMenu,
   LShift,
   MediaNextTrack,
@@ -166,25 +194,18 @@ pub enum SpecialKey {
   Print,
   PrintScr,
   RControl,
-  Redo,
   Return,
   RightArrow,
   RShift,
-  ScrollLock,
   Select,
-  ScriptSwitch,
   Shift,
-  ShiftLock,
   Space,
   Subtract,
-  SysReq,
   Tab,
-  Undo,
   UpArrow,
   VolumeDown,
   VolumeMute,
   VolumeUp,
-  MicMute,
 }
 
 pub enum Key {
@@ -212,8 +233,6 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::Add => EnigoKey::Add,
       SpecialKey::Alt => EnigoKey::Alt,
       SpecialKey::Backspace => EnigoKey::Backspace,
-      SpecialKey::Break => EnigoKey::Break,
-      SpecialKey::Begin => EnigoKey::Begin,
       SpecialKey::Cancel => EnigoKey::Cancel,
       SpecialKey::CapsLock => EnigoKey::CapsLock,
       SpecialKey::Clear => EnigoKey::Clear,
@@ -250,18 +269,6 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::F22 => EnigoKey::F22,
       SpecialKey::F23 => EnigoKey::F23,
       SpecialKey::F24 => EnigoKey::F24,
-      SpecialKey::F25 => EnigoKey::F25,
-      SpecialKey::F26 => EnigoKey::F26,
-      SpecialKey::F27 => EnigoKey::F27,
-      SpecialKey::F28 => EnigoKey::F28,
-      SpecialKey::F29 => EnigoKey::F29,
-      SpecialKey::F30 => EnigoKey::F30,
-      SpecialKey::F31 => EnigoKey::F31,
-      SpecialKey::F32 => EnigoKey::F32,
-      SpecialKey::F33 => EnigoKey::F33,
-      SpecialKey::F34 => EnigoKey::F34,
-      SpecialKey::F35 => EnigoKey::F35,
-      SpecialKey::Find => EnigoKey::Find,
       SpecialKey::Hangul => EnigoKey::Hangul,
       SpecialKey::Hanja => EnigoKey::Hanja,
       SpecialKey::Help => EnigoKey::Help,
@@ -270,7 +277,6 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::Kanji => EnigoKey::Kanji,
       SpecialKey::LControl => EnigoKey::LControl,
       SpecialKey::LeftArrow => EnigoKey::LeftArrow,
-      SpecialKey::Linefeed => EnigoKey::Linefeed,
       SpecialKey::LMenu => EnigoKey::LMenu,
       SpecialKey::LShift => EnigoKey::LShift,
       SpecialKey::MediaNextTrack => EnigoKey::MediaNextTrack,
@@ -298,25 +304,18 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::Print => EnigoKey::PrintScr,
       SpecialKey::PrintScr => EnigoKey::PrintScr,
       SpecialKey::RControl => EnigoKey::RControl,
-      SpecialKey::Redo => EnigoKey::Redo,
       SpecialKey::Return => EnigoKey::Return,
       SpecialKey::RightArrow => EnigoKey::RightArrow,
       SpecialKey::RShift => EnigoKey::RShift,
-      SpecialKey::ScrollLock => EnigoKey::ScrollLock,
       SpecialKey::Select => EnigoKey::Select,
-      SpecialKey::ScriptSwitch => EnigoKey::ScriptSwitch,
       SpecialKey::Shift => EnigoKey::Shift,
-      SpecialKey::ShiftLock => EnigoKey::ShiftLock,
       SpecialKey::Space => EnigoKey::Space,
       SpecialKey::Subtract => EnigoKey::Subtract,
-      SpecialKey::SysReq => EnigoKey::SysReq,
       SpecialKey::Tab => EnigoKey::Tab,
-      SpecialKey::Undo => EnigoKey::Undo,
       SpecialKey::UpArrow => EnigoKey::UpArrow,
       SpecialKey::VolumeDown => EnigoKey::VolumeDown,
       SpecialKey::VolumeMute => EnigoKey::VolumeMute,
       SpecialKey::VolumeUp => EnigoKey::VolumeUp,
-      SpecialKey::MicMute => EnigoKey::MicMute,
     }
   }
 }
@@ -343,6 +342,41 @@ impl Herox {
   #[napi]
   pub fn move_mouse(&mut self, x: i32, y: i32) {
     self.enigo.move_mouse(x, y, enigo::Coordinate::Abs).unwrap();
+  }
+
+  #[napi]
+  pub fn smooth_move_mouse(&mut self, x: i32, y: i32, duration: u32) {
+    let step = 10;
+    let minimum_distance = 50;
+    let original_target_position = Position { x, y };
+    let mut rng = rand::rng();
+    let mouse_position = self.get_mouse_position();
+    let mut target_position = Position { x, y };
+    let mut adjusted_duration = duration / step;
+
+    let distance = Position::distance(&mouse_position, &target_position);
+    if distance > minimum_distance {
+      let angle_turns = rng.random_range(0.0..=1.0);
+      let magnitude_percentage = rng.random_range(0.0..=0.1);
+      let magnitude = distance as f64 * magnitude_percentage;
+
+      target_position = Position::subtract(&original_target_position, &Position::from_polar(angle_turns, magnitude));
+      adjusted_duration = ((duration as f64 * (1.0 - magnitude_percentage) as f64) as u32) / step;
+    }
+
+    for t in 0..(adjusted_duration) {
+      let percentage = t as f64 / adjusted_duration as f64;
+      let interpolated_position = Position::interpolate(&mouse_position, &target_position, ease_out_cubic(percentage));
+
+      self.move_mouse(interpolated_position.x, interpolated_position.y);
+      thread::sleep(Duration::from_millis(step.into()));
+    }
+
+    let new_position = self.get_mouse_position();
+
+    if Position::distance(&new_position, &original_target_position) >= 1  {
+        self.smooth_move_mouse(original_target_position.x, original_target_position.y, duration - adjusted_duration);
+    }
   }
 
   #[napi]
