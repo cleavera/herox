@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate napi_derive;
 
-use std::{time::Duration, thread};
+use std::{thread, time::Duration, ops::{Sub, Add, Mul}};
 
 use enigo::{
   Button,
@@ -14,13 +14,13 @@ use napi::{bindgen_prelude::FromNapiValue, JsObject, JsUnknown, ValueType};
 use rand::Rng;
 
 pub fn ease_out_quad(t: f64) -> f64 {
-    let t_clamped = t.max(0.0).min(1.0);
-    t_clamped * (2.0 - t_clamped)
+  let t_clamped = t.max(0.0).min(1.0);
+  t_clamped * (2.0 - t_clamped)
 }
 
 pub fn ease_out_cubic(t: f64) -> f64 {
-    let t_clamped = t.max(0.0).min(1.0);
-    1.0 - (1.0 - t_clamped).powi(3)
+  let t_clamped = t.max(0.0).min(1.0);
+  1.0 - (1.0 - t_clamped).powi(3)
 }
 
 #[napi]
@@ -36,35 +36,96 @@ impl Position {
     Position { x, y }
   }
 
+  pub fn magnitude(&self) -> f64 {
+    ((self.x.pow(2) + self.y.pow(2)) as f64).sqrt()
+  }
+
   pub fn interpolate(start: &Position, end: &Position, t: f64) -> Self {
-        let start_x_f64 = start.x as f64;
-        let start_y_f64 = start.y as f64;
-        let end_x_f64 = end.x as f64;
-        let end_y_f64 = end.y as f64;
+    let one_minus_t = 1.0 - t;
+    let control = Position::generate_arc_control_point(start, end, 0.1);
 
-        let x = start_x_f64 + t * (end_x_f64 - start_x_f64);
-        let y = start_y_f64 + t * (end_y_f64 - start_y_f64);
+    let x = one_minus_t.powi(2) * (start.x as f64)
+      + 2.0 * one_minus_t * t * (control.x as f64)
+      + t.powi(2) * (end.x as f64);
 
-        Position::new(x.round() as i32, y.round() as i32)
-    }
+    let y = one_minus_t.powi(2) * (start.y as f64)
+      + 2.0 * one_minus_t * t * (control.y as f64)
+      + t.powi(2) * (end.y as f64);
 
-    pub fn distance(position1: &Position, position2: &Position) -> u32 {
-        let dx = (position1.x - position2.x) as i64;
-        let dy = (position1.y - position2.y) as i64;
-        (dx.pow(2) + dy.pow(2)).isqrt() as u32
-    }
+    Position::new(x.round() as i32, y.round() as i32)
+  }
 
-    pub fn from_polar(angle_turns: f64, magnitude: f64) -> Self {
-        let angle_rad = angle_turns * 2.0 * std::f64::consts::PI;
+  pub fn generate_arc_control_point(
+    start: &Position,
+    end: &Position,
+    max_arc_magnitude_factor: f64,
+  ) -> Self {
+    let mut rng = rand::rng();
+    let midpoint: Position = &(start + end) * 0.5;
+    let difference = end - start;
+    let straight_distance = Position::distance(start, end) as f64;
 
-        let x = magnitude * angle_rad.cos();
-        let y = magnitude * angle_rad.sin();
-        Position::new(x.round() as i32, y.round() as i32)
-    }
+    let perp = if rng.random_bool(0.5) {
+      Position::new(-difference.y, difference.x)
+    } else {
+      Position::new(difference.y, -difference.x)
+    };
 
-    pub fn subtract(position1: &Position, position2: &Position) -> Self {
-        Position::new(position1.x - position2.x, position1.y - position2.y)
-    }
+    let perp_magnitude = perp.magnitude();
+    let unit_perp_x = if perp_magnitude != 0.0 {
+      (perp.x as f64) / perp_magnitude
+    } else {
+      0.0
+    };
+    let unit_perp_y = if perp_magnitude != 0.0 {
+      (perp.y as f64) / perp_magnitude
+    } else {
+      0.0
+    };
+
+    let arc_magnitude = rng.random_range(0.0..=(straight_distance * max_arc_magnitude_factor));
+    let control_x = (midpoint.x as f64) + unit_perp_x * arc_magnitude;
+    let control_y = (midpoint.y as f64) + unit_perp_y * arc_magnitude;
+
+    Position::new(control_x.round() as i32, control_y.round() as i32)
+  }
+
+  pub fn distance(position1: &Position, position2: &Position) -> u32 {
+    let difference = position1 - position2;
+    difference.magnitude() as u32
+  }
+
+  pub fn from_polar(angle_turns: f64, magnitude: f64) -> Self {
+    let angle_rad = angle_turns * 2.0 * std::f64::consts::PI;
+
+    let x = magnitude * angle_rad.cos();
+    let y = magnitude * angle_rad.sin();
+    Position::new(x.round() as i32, y.round() as i32)
+  }
+}
+
+impl Add for &Position {
+  type Output = Position;
+
+  fn add(self, rhs: Self) -> Self::Output {
+    Position::new(self.x + rhs.x, self.y + rhs.y)
+  }
+}
+
+impl Sub for &Position {
+  type Output = Position;
+
+  fn sub(self, rhs: Self) -> Self::Output {
+    Position::new(self.x - rhs.x, self.y - rhs.y)
+  }
+}
+
+impl Mul<f64> for &Position {
+  type Output = Position;
+
+  fn mul(self, rhs: f64) -> Self::Output {
+    Position::new(((self.x as f64) * rhs) as i32, ((self.y as f64) * rhs) as i32)
+  }
 }
 
 impl From<(i32, i32)> for Position {
@@ -345,7 +406,7 @@ impl Herox {
   }
 
   #[napi]
-  pub fn smooth_move_mouse(&mut self, x: i32, y: i32, duration: u32) {
+  pub fn humanlike_move_mouse(&mut self, x: i32, y: i32, duration: u32) {
     let step = 10;
     let minimum_distance = 50;
     let original_target_position = Position { x, y };
@@ -360,13 +421,17 @@ impl Herox {
       let magnitude_percentage = rng.random_range(0.0..=0.1);
       let magnitude = distance as f64 * magnitude_percentage;
 
-      target_position = Position::subtract(&original_target_position, &Position::from_polar(angle_turns, magnitude));
+      target_position = &original_target_position - &Position::from_polar(angle_turns, magnitude);
       adjusted_duration = ((duration as f64 * (1.0 - magnitude_percentage) as f64) as u32) / step;
     }
 
     for t in 0..(adjusted_duration) {
       let percentage = t as f64 / adjusted_duration as f64;
-      let interpolated_position = Position::interpolate(&mouse_position, &target_position, ease_out_cubic(percentage));
+      let interpolated_position = Position::interpolate(
+        &mouse_position,
+        &target_position,
+        ease_out_cubic(percentage),
+      );
 
       self.move_mouse(interpolated_position.x, interpolated_position.y);
       thread::sleep(Duration::from_millis(step.into()));
@@ -374,8 +439,12 @@ impl Herox {
 
     let new_position = self.get_mouse_position();
 
-    if Position::distance(&new_position, &original_target_position) >= 1  {
-        self.smooth_move_mouse(original_target_position.x, original_target_position.y, duration - adjusted_duration);
+    if Position::distance(&new_position, &original_target_position) >= 1 {
+      self.humanlike_move_mouse(
+        original_target_position.x,
+        original_target_position.y,
+        duration - adjusted_duration,
+      );
     }
   }
 
