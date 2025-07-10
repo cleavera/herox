@@ -1,6 +1,6 @@
 use enigo::{
   Direction::{Click, Press, Release},
-  Enigo, Key as EnigoKey, Keyboard as EnigoKeyboard, Settings, InputError,
+  Enigo, InputError, Key as EnigoKey, Keyboard as EnigoKeyboard, Settings,
 };
 use napi::{bindgen_prelude::FromNapiValue, Error, JsObject, JsUnknown, ValueType};
 
@@ -9,9 +9,7 @@ pub enum SpecialKey {
   Add,
   Alt,
   Backspace,
-  Cancel,
   CapsLock,
-  Clear,
   Command,
   Control,
   Decimal,
@@ -20,7 +18,6 @@ pub enum SpecialKey {
   DownArrow,
   End,
   Escape,
-  Execute,
   F1,
   F2,
   F3,
@@ -65,6 +62,7 @@ pub enum SpecialKey {
   Option,
   PageDown,
   PageUp,
+  #[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
   Pause,
   RControl,
   Return,
@@ -105,9 +103,7 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::Add => EnigoKey::Add,
       SpecialKey::Alt => EnigoKey::Alt,
       SpecialKey::Backspace => EnigoKey::Backspace,
-      SpecialKey::Cancel => EnigoKey::Cancel,
       SpecialKey::CapsLock => EnigoKey::CapsLock,
-      SpecialKey::Clear => EnigoKey::Clear,
       SpecialKey::Command => EnigoKey::Meta,
       SpecialKey::Control => EnigoKey::Control,
       SpecialKey::Decimal => EnigoKey::Decimal,
@@ -116,7 +112,6 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::DownArrow => EnigoKey::DownArrow,
       SpecialKey::End => EnigoKey::End,
       SpecialKey::Escape => EnigoKey::Escape,
-      SpecialKey::Execute => EnigoKey::Execute,
       SpecialKey::F1 => EnigoKey::F1,
       SpecialKey::F2 => EnigoKey::F2,
       SpecialKey::F3 => EnigoKey::F3,
@@ -138,6 +133,7 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::F19 => EnigoKey::F19,
       SpecialKey::Help => EnigoKey::Help,
       SpecialKey::Home => EnigoKey::Home,
+      #[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
       SpecialKey::Insert => EnigoKey::Insert,
       SpecialKey::LControl => EnigoKey::LControl,
       SpecialKey::LeftArrow => EnigoKey::LeftArrow,
@@ -160,6 +156,7 @@ impl Into<EnigoKey> for SpecialKey {
       SpecialKey::Option => EnigoKey::Option,
       SpecialKey::PageDown => EnigoKey::PageDown,
       SpecialKey::PageUp => EnigoKey::PageUp,
+      #[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
       SpecialKey::Pause => EnigoKey::Pause,
       SpecialKey::RControl => EnigoKey::RControl,
       SpecialKey::Return => EnigoKey::Return,
@@ -178,21 +175,21 @@ impl Into<EnigoKey> for SpecialKey {
 }
 
 pub struct KeyboardError {
-    message: String,
+  message: String,
 }
 
 impl From<KeyboardError> for Error {
-    fn from(value: KeyboardError) -> Error {
-        Error::from_reason(value.message)
-    }
+  fn from(value: KeyboardError) -> Error {
+    Error::from_reason(value.message)
+  }
 }
 
 impl From<InputError> for KeyboardError {
-    fn from(value: InputError) -> Self {
-        KeyboardError {
-            message: value.to_string(),
-        }
+  fn from(value: InputError) -> Self {
+    KeyboardError {
+      message: value.to_string(),
     }
+  }
 }
 
 #[napi]
@@ -211,7 +208,10 @@ impl Keyboard {
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
   pub fn key_down(&mut self, key: JsUnknown) -> Result<(), Error> {
-    self.enigo.key(Self::get_key(key)?, Press).map_err(KeyboardError::from)?;
+    self
+      .enigo
+      .key(Self::get_key(key)?, Press)
+      .map_err(KeyboardError::from)?;
 
     Ok(())
   }
@@ -220,14 +220,18 @@ impl Keyboard {
   pub fn key_up(&mut self, key: JsUnknown) -> Result<(), Error> {
     self
       .enigo
-      .key(Self::get_key(key)?, Release).map_err(KeyboardError::from)?;
+      .key(Self::get_key(key)?, Release)
+      .map_err(KeyboardError::from)?;
 
     Ok(())
   }
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
   pub fn key_press(&mut self, key: JsUnknown) -> Result<(), Error> {
-    self.enigo.key(Self::get_key(key)?, Click).map_err(KeyboardError::from)?;
+    self
+      .enigo
+      .key(Self::get_key(key)?, Click)
+      .map_err(KeyboardError::from)?;
 
     Ok(())
   }
