@@ -1,4 +1,4 @@
-use napi::bindgen_prelude::{AsyncTask, Error, Result};
+use napi::bindgen_prelude::{Error, Result};
 use xcap::{Window as XCapWindow, XCapError};
 use crate::image::Image;
 
@@ -36,7 +36,7 @@ impl Window {
 
     #[napi]
     pub fn all() -> Result<Vec<Window>> {
-        let monitors = XCapWindow::all()?
+        let monitors = XCapWindow::all().map_err(WindowError::from)?
             .iter()
             .map(Window::new)
             .collect();
@@ -49,42 +49,42 @@ impl Window {
 impl Window {
     #[napi]
     pub fn title(&self) -> Result<String> {
-        self.x_cap_window.title()?
+        Ok(self.x_cap_window.title().map_err(WindowError::from)?)
     }
 
     #[napi]
     pub fn x(&self) -> Result<i32> {
-        self.x_cap_window.x()?
+        Ok(self.x_cap_window.x().map_err(WindowError::from)?)
     }
 
     #[napi]
     pub fn y(&self) -> Result<i32> {
-        self.x_cap_window.y()?
+        Ok(self.x_cap_window.y().map_err(WindowError::from)?)
     }
 
     #[napi]
     pub fn z(&self) -> Result<i32> {
-        self.x_cap_window.z()?
+        Ok(self.x_cap_window.z().map_err(WindowError::from)?)
     }
 
     #[napi]
     pub fn width(&self) -> Result<u32> {
-        self.x_cap_window.width()?
+        Ok(self.x_cap_window.width().map_err(WindowError::from)?)
     }
 
     #[napi]
     pub fn height(&self) -> Result<u32> {
-        self.x_cap_window.height()?
+        Ok(self.x_cap_window.height().map_err(WindowError::from)?)
     }
 
     #[napi]
     pub fn is_focused(&self) -> Result<bool> {
-        self.x_cap_window.is_focused()?
+        Ok(self.x_cap_window.is_focused().map_err(WindowError::from)?)
     }
 
     #[napi]
     pub fn capture_image(&self) -> Result<Image> {
-        let rgba_image = self.x_cap_window.capture_image()?;
+        let rgba_image = self.x_cap_window.capture_image().map_err(WindowError::from)?;
 
         Ok(Image::from(rgba_image))
     }

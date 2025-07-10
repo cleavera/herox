@@ -1,6 +1,6 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { Keyboard, Mouse, Position, SpecialKey, unicode } from '../index.js';
+import { Keyboard, Mouse, Position, SpecialKey, unicode, Window } from '../index.js';
 
 test('mouse move', () => {
   const mouse = new Mouse();
@@ -11,8 +11,8 @@ test('mouse move', () => {
 
   mouse.moveTo(500, 600);
   const finalPosition: Position = mouse.getPosition();
-  strictEqual(finalPosition.x, 500)
-  strictEqual(finalPosition.y, 600)
+  strictEqual(finalPosition.x, 500);
+  strictEqual(finalPosition.y, 600);
 });
 
 test('key press', async () => {
@@ -20,4 +20,15 @@ test('key press', async () => {
 
   keyboard.keyPress(unicode('a'));
   keyboard.keyPress(SpecialKey.Return);
+});
+
+test('screen capture', async () => {
+  const window = Window.all().find(w => w.isFocused());
+  const image = window!.captureImage();
+  const target = { x: image.width / 2, y: image.height / 2 };
+
+  const pixel = image.getPixelRgba(target.x, target.y);
+  const matchingPixels = image.findRgbas(pixel);
+
+  strictEqual(matchingPixels.some(p => p.x === target.x && p.y === target.y), true);
 });
