@@ -1,4 +1,5 @@
-use enigo::{Enigo, Settings};
+use enigo::{Enigo, Settings, InputError};
+use napi::Error;
 
 use std::{thread, time::Duration};
 
@@ -65,6 +66,24 @@ impl Into<EnigoButton> for MouseButton {
   }
 }
 
+pub struct MouseError {
+    message: String,
+}
+
+impl From<MouseError> for Error {
+    fn from(value: MouseError) -> Error {
+        Error::from_reason(value.message)
+    }
+}
+
+impl From<InputError> for MouseError {
+    fn from(value: InputError) -> Self {
+        MouseError {
+            message: value.to_string(),
+        }
+    }
+}
+
 #[napi]
 pub struct Mouse {
   enigo: Enigo,
@@ -80,22 +99,24 @@ impl Mouse {
   }
 
   #[napi]
-  pub fn get_position(&self) -> Position {
-    self.enigo.location().unwrap().into()
+  pub fn get_position(&self) -> Result<Position, Error> {
+    Ok(self.enigo.location().map_err(MouseError::from)?.into())
   }
 
   #[napi]
-  pub fn move_to(&mut self, x: i32, y: i32) {
-    self.enigo.move_mouse(x, y, enigo::Coordinate::Abs).unwrap();
+  pub fn move_to(&mut self, x: i32, y: i32) -> Result<(), Error> {
+    self.enigo.move_mouse(x, y, enigo::Coordinate::Abs).map_err(MouseError::from)?;
+    
+    Ok(())
   }
 
   #[napi]
-  pub fn humanlike_move_to(&mut self, x: i32, y: i32, duration: u32) {
+  pub fn humanlike_move_to(&mut self, x: i32, y: i32, duration: u32) -> Result<(), Error> {
     let step = 10;
     let minimum_distance = 50;
     let original_target_position = Position { x, y };
     let mut rng = rand::rng();
-    let mouse_position = self.get_position();
+    let mouse_position = self.get_position()?;
     let mut target_position = Position { x, y };
     let mut adjusted_duration = duration / step;
 
@@ -117,23 +138,27 @@ impl Mouse {
         ease_out_cubic(percentage),
       );
 
-      self.move_to(interpolated_position.x, interpolated_position.y);
+      self.move_to(interpolated_position.x, interpolated_position.y)?;
       thread::sleep(Duration::from_millis(step.into()));
     }
 
-    let new_position = self.get_position();
+    let new_position = self.get_position()?;
 
     if Position::distance(&new_position, &original_target_position) >= 1 {
       self.humanlike_move_to(
         original_target_position.x,
         original_target_position.y,
         duration - adjusted_duration,
-      );
+      )?;
     }
+
+    Ok(())
   }
 
   #[napi]
-  pub fn click(&mut self, button: MouseButton) {
-    self.enigo.button(button.into(), Click).unwrap();
+  pub fn click(&mut self, button: MouseButton) -> Result<(), Error> {
+    self.enigo.button(button.into(), Click).map_err(MouseError::from)?;
+
+    Ok(())
   }
 }

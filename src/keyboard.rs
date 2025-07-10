@@ -1,8 +1,8 @@
 use enigo::{
   Direction::{Click, Press, Release},
-  Enigo, Key as EnigoKey, Keyboard as EnigoKeyboard, Settings,
+  Enigo, Key as EnigoKey, Keyboard as EnigoKeyboard, Settings, InputError,
 };
-use napi::{bindgen_prelude::FromNapiValue, JsObject, JsUnknown, ValueType};
+use napi::{bindgen_prelude::FromNapiValue, Error, JsObject, JsUnknown, ValueType};
 
 #[napi(string_enum)]
 pub enum SpecialKey {
@@ -177,6 +177,24 @@ impl Into<EnigoKey> for SpecialKey {
   }
 }
 
+pub struct KeyboardError {
+    message: String,
+}
+
+impl From<KeyboardError> for Error {
+    fn from(value: KeyboardError) -> Error {
+        Error::from_reason(value.message)
+    }
+}
+
+impl From<InputError> for KeyboardError {
+    fn from(value: InputError) -> Self {
+        KeyboardError {
+            message: value.to_string(),
+        }
+    }
+}
+
 #[napi]
 pub struct Keyboard {
   enigo: Enigo,
@@ -192,21 +210,26 @@ impl Keyboard {
   }
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
-  pub fn key_down(&mut self, key: JsUnknown) {
-    self.enigo.key(Self::get_key(key).unwrap(), Press).unwrap();
+  pub fn key_down(&mut self, key: JsUnknown) -> Result<(), Error> {
+    self.enigo.key(Self::get_key(key)?, Press).map_err(KeyboardError::from)?;
+
+    Ok(())
   }
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
-  pub fn key_up(&mut self, key: JsUnknown) {
+  pub fn key_up(&mut self, key: JsUnknown) -> Result<(), Error> {
     self
       .enigo
-      .key(Self::get_key(key).unwrap(), Release)
-      .unwrap();
+      .key(Self::get_key(key)?, Release).map_err(KeyboardError::from)?;
+
+    Ok(())
   }
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
-  pub fn key_press(&mut self, key: JsUnknown) {
-    self.enigo.key(Self::get_key(key).unwrap(), Click).unwrap();
+  pub fn key_press(&mut self, key: JsUnknown) -> Result<(), Error> {
+    self.enigo.key(Self::get_key(key)?, Click).map_err(KeyboardError::from)?;
+
+    Ok(())
   }
 
   fn get_key(arg: JsUnknown) -> Result<EnigoKey, napi::Error> {
