@@ -2,7 +2,11 @@ use enigo::{Enigo, InputError, Settings};
 use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use xcap::{Monitor, XCapError};
 
-use std::{thread, time::Duration};
+use std::{
+  sync::{Arc, Mutex},
+  thread,
+  time::Duration,
+};
 
 use enigo::{Button as EnigoButton, Direction::Click, Mouse as EnigoMouse};
 use rand::Rng;
@@ -68,6 +72,18 @@ pub struct MouseError {
   message: String,
 }
 
+impl MouseError {
+  fn new(message: &str) -> Self {
+    MouseError {
+      message: message.to_string(),
+    }
+  }
+
+  fn locked() -> Self {
+    MouseError::new("Only one mouse task is allowed at a time")
+  }
+}
+
 impl From<MouseError> for Error {
   fn from(value: MouseError) -> Error {
     Error::from_reason(value.message)
@@ -91,14 +107,12 @@ impl From<XCapError> for MouseError {
 }
 
 pub struct AsyncGetPosition {
-  mouse: MouseSync,
+  mouse: Arc<Mutex<MouseSync>>,
 }
 
 impl AsyncGetPosition {
-  pub fn new() -> Self {
-    Self {
-      mouse: MouseSync::new(),
-    }
+  pub fn new(mouse: Arc<Mutex<MouseSync>>) -> Self {
+    Self { mouse }
   }
 }
 
@@ -108,7 +122,11 @@ impl Task for AsyncGetPosition {
   type JsValue = Position;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    self.mouse.get_position()
+    self
+      .mouse
+      .try_lock()
+      .map_err(|_| MouseError::locked())?
+      .get_position()
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
@@ -119,15 +137,15 @@ impl Task for AsyncGetPosition {
 pub struct AsyncMoveTo {
   x: i32,
   y: i32,
-  mouse: MouseSync,
+  mouse: Arc<Mutex<MouseSync>>,
 }
 
 impl AsyncMoveTo {
-  pub fn new(x: i32, y: i32) -> Self {
+  pub fn new(x: i32, y: i32, mouse: Arc<Mutex<MouseSync>>) -> Self {
     Self {
       x,
       y,
-      mouse: MouseSync::new(),
+      mouse,
     }
   }
 }
@@ -138,7 +156,7 @@ impl Task for AsyncMoveTo {
   type JsValue = ();
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    self.mouse.move_to(self.x, self.y)
+    self.mouse.try_lock().map_err(|_| MouseError::locked())?.move_to(self.x, self.y)
   }
 
   fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
@@ -150,16 +168,16 @@ pub struct AsyncHumanlikeMoveTo {
   x: i32,
   y: i32,
   duration: u32,
-  mouse: MouseSync,
+  mouse: Arc<Mutex<MouseSync>>,
 }
 
 impl AsyncHumanlikeMoveTo {
-  pub fn new(x: i32, y: i32, duration: u32) -> Self {
+  pub fn new(x: i32, y: i32, duration: u32, mouse: Arc<Mutex<MouseSync>>) -> Self {
     Self {
       x,
       y,
       duration,
-      mouse: MouseSync::new(),
+      mouse,
     }
   }
 }
@@ -170,7 +188,7 @@ impl Task for AsyncHumanlikeMoveTo {
   type JsValue = ();
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    self.mouse.humanlike_move_to(self.x, self.y, self.duration)
+    self.mouse.try_lock().map_err(|_| MouseError::locked())?.humanlike_move_to(self.x, self.y, self.duration)
   }
 
   fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
@@ -180,14 +198,14 @@ impl Task for AsyncHumanlikeMoveTo {
 
 pub struct AsyncClick {
   button: MouseButton,
-  mouse: MouseSync,
+  mouse: Arc<Mutex<MouseSync>>,
 }
 
 impl AsyncClick {
-  pub fn new(mouse_button: MouseButton) -> Self {
+  pub fn new(mouse_button: MouseButton, mouse: Arc<Mutex<MouseSync>>) -> Self {
     Self {
       button: mouse_button,
-      mouse: MouseSync::new(),
+      mouse,
     }
   }
 }
@@ -198,7 +216,7 @@ impl Task for AsyncClick {
   type JsValue = ();
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    self.mouse.click(self.button)
+    self.mouse.try_lock().map_err(|_| MouseError::locked())?.click(self.button)
   }
 
   fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
@@ -298,6 +316,7 @@ impl MouseSync {
 
 #[napi]
 pub struct Mouse {
+  mouse: Arc<Mutex<MouseSync>>,
 }
 
 #[napi]
@@ -305,17 +324,18 @@ impl Mouse {
   #[napi(constructor)]
   pub fn new() -> Self {
     Mouse {
+      mouse: Arc::new(Mutex::new(MouseSync::new())),
     }
   }
 
   #[napi]
   pub fn get_position(&self) -> AsyncTask<AsyncGetPosition> {
-    AsyncTask::new(AsyncGetPosition::new())
+    AsyncTask::new(AsyncGetPosition::new(self.mouse.clone()))
   }
 
   #[napi]
   pub fn move_to(&mut self, x: i32, y: i32) -> AsyncTask<AsyncMoveTo> {
-    AsyncTask::new(AsyncMoveTo::new(x, y))
+    AsyncTask::new(AsyncMoveTo::new(x, y, self.mouse.clone()))
   }
 
   #[napi]
@@ -325,11 +345,11 @@ impl Mouse {
     y: i32,
     duration: u32,
   ) -> AsyncTask<AsyncHumanlikeMoveTo> {
-    AsyncTask::new(AsyncHumanlikeMoveTo::new(x, y, duration))
+    AsyncTask::new(AsyncHumanlikeMoveTo::new(x, y, duration, self.mouse.clone()))
   }
 
   #[napi]
   pub fn click(&mut self, button: MouseButton) -> AsyncTask<AsyncClick> {
-    AsyncTask::new(AsyncClick::new(button))
+    AsyncTask::new(AsyncClick::new(button, self.mouse.clone()))
   }
 }
