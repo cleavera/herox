@@ -1,5 +1,5 @@
 use crate::image::Image;
-use napi::bindgen_prelude::{AsyncTask, Env, Error, Task};
+use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use xcap::{Window as XCapWindow, XCapError};
 
 pub struct WindowError {
