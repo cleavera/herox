@@ -15,6 +15,19 @@ test('mouse move', () => {
   strictEqual(finalPosition.y, 600);
 });
 
+test('humanlike mouse move', () => {
+  const mouse = new Mouse();
+  mouse.humanlikeMoveTo(0, 0, 1000);
+  const initial: Position = mouse.getPosition();
+  strictEqual(initial.x, 0);
+  strictEqual(initial.y, 0);
+
+  mouse.humanlikeMoveTo(500, 600, 1000);
+  const finalPosition: Position = mouse.getPosition();
+  strictEqual(finalPosition.x, 500);
+  strictEqual(finalPosition.y, 600);
+});
+
 test('key press', async () => {
   const keyboard = new Keyboard();
 
@@ -32,3 +45,4 @@ test('screen capture', async () => {
 
   strictEqual(matchingPixels.some(p => p.x === target.x && p.y === target.y), true);
 });
+

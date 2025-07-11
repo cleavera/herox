@@ -18,16 +18,15 @@ impl Position {
     ((self.x.pow(2) + self.y.pow(2)) as f64).sqrt()
   }
 
-  pub fn interpolate(start: &Position, end: &Position, t: f64) -> Self {
+  pub fn interpolate(start: &Position, end: &Position, control_point: &Position, t: f64) -> Self {
     let one_minus_t = 1.0 - t;
-    let control = Position::generate_arc_control_point(start, end, 0.1);
 
     let x = one_minus_t.powi(2) * (start.x as f64)
-      + 2.0 * one_minus_t * t * (control.x as f64)
+      + 2.0 * one_minus_t * t * (control_point.x as f64)
       + t.powi(2) * (end.x as f64);
 
     let y = one_minus_t.powi(2) * (start.y as f64)
-      + 2.0 * one_minus_t * t * (control.y as f64)
+      + 2.0 * one_minus_t * t * (control_point.y as f64)
       + t.powi(2) * (end.y as f64);
 
     Position::new(x.round() as i32, y.round() as i32)
@@ -79,6 +78,13 @@ impl Position {
     let x = magnitude * angle_rad.cos();
     let y = magnitude * angle_rad.sin();
     Position::new(x.round() as i32, y.round() as i32)
+  }
+
+  pub fn clamp(&self, min: &Position, max: &Position) -> Self {
+    Position::new(
+      self.x.clamp(min.x, max.x),
+      self.y.clamp(min.y, max.y),
+    )
   }
 }
 

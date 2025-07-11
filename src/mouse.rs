@@ -1,12 +1,10 @@
-use enigo::{Enigo, Settings, InputError};
-use napi::Error;
+use enigo::{Enigo, InputError, Settings};
+use napi::{Error, Task, JsError};
+use xcap::{Monitor, XCapError};
 
 use std::{thread, time::Duration};
 
-use enigo::{
-  Button as EnigoButton,
-  Direction::Click, Mouse as EnigoMouse,
-};
+use enigo::{Button as EnigoButton, Direction::Click, Mouse as EnigoMouse};
 use rand::Rng;
 
 use crate::position::Position;
@@ -67,21 +65,29 @@ impl Into<EnigoButton> for MouseButton {
 }
 
 pub struct MouseError {
-    message: String,
+  message: String,
 }
 
 impl From<MouseError> for Error {
-    fn from(value: MouseError) -> Error {
-        Error::from_reason(value.message)
-    }
+  fn from(value: MouseError) -> Error {
+    Error::from_reason(value.message)
+  }
 }
 
 impl From<InputError> for MouseError {
-    fn from(value: InputError) -> Self {
-        MouseError {
-            message: value.to_string(),
-        }
+  fn from(value: InputError) -> Self {
+    MouseError {
+      message: value.to_string(),
     }
+  }
+}
+
+impl From<XCapError> for MouseError {
+  fn from(value: XCapError) -> Self {
+    MouseError {
+      message: value.to_string(),
+    }
+  }
 }
 
 #[napi]
@@ -105,8 +111,11 @@ impl Mouse {
 
   #[napi]
   pub fn move_to(&mut self, x: i32, y: i32) -> Result<(), Error> {
-    self.enigo.move_mouse(x, y, enigo::Coordinate::Abs).map_err(MouseError::from)?;
-    
+    self
+      .enigo
+      .move_mouse(x.max(0), y.max(0), enigo::Coordinate::Abs)
+      .map_err(MouseError::from)?;
+
     Ok(())
   }
 
@@ -119,6 +128,16 @@ impl Mouse {
     let mouse_position = self.get_position()?;
     let mut target_position = Position { x, y };
     let mut adjusted_duration = duration / step;
+    let monitors = Monitor::all().map_err(MouseError::from)?;
+    let monitor = monitors.first().expect("No monitor found");
+
+    let min_pos = Position::new(0, 0);
+
+    let max_pos = &min_pos
+      + &Position::new(
+        monitor.width().map_err(MouseError::from)? as i32,
+        monitor.height().map_err(MouseError::from)? as i32,
+      );
 
     let distance = Position::distance(&mouse_position, &target_position);
     if distance > minimum_distance {
@@ -126,15 +145,20 @@ impl Mouse {
       let magnitude_percentage = rng.random_range(0.0..=0.1);
       let magnitude = distance as f64 * magnitude_percentage;
 
-      target_position = &original_target_position - &Position::from_polar(angle_turns, magnitude);
+      target_position = (&original_target_position - &Position::from_polar(angle_turns, magnitude))
+        .clamp(&min_pos, &max_pos);
       adjusted_duration = ((duration as f64 * (1.0 - magnitude_percentage) as f64) as u32) / step;
     }
+
+    let control_point =
+      Position::generate_arc_control_point(&mouse_position, &target_position, 0.1);
 
     for t in 0..(adjusted_duration) {
       let percentage = t as f64 / adjusted_duration as f64;
       let interpolated_position = Position::interpolate(
         &mouse_position,
         &target_position,
+        &control_point,
         ease_out_cubic(percentage),
       );
 
@@ -157,7 +181,10 @@ impl Mouse {
 
   #[napi]
   pub fn click(&mut self, button: MouseButton) -> Result<(), Error> {
-    self.enigo.button(button.into(), Click).map_err(MouseError::from)?;
+    self
+      .enigo
+      .button(button.into(), Click)
+      .map_err(MouseError::from)?;
 
     Ok(())
   }
