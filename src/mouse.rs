@@ -1,5 +1,5 @@
 use enigo::{Enigo, InputError, Settings};
-use napi::{Error, Task, JsError};
+use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use xcap::{Monitor, XCapError};
 
 use std::{thread, time::Duration};
@@ -90,26 +90,137 @@ impl From<XCapError> for MouseError {
   }
 }
 
-#[napi]
-pub struct Mouse {
-  enigo: Enigo,
+pub struct AsyncGetPosition {
+  mouse: MouseSync,
+}
+
+impl AsyncGetPosition {
+  pub fn new() -> Self {
+    Self {
+      mouse: MouseSync::new(),
+    }
+  }
 }
 
 #[napi]
-impl Mouse {
-  #[napi(constructor)]
+impl Task for AsyncGetPosition {
+  type Output = Position;
+  type JsValue = Position;
+
+  fn compute(&mut self) -> Result<Self::Output, Error> {
+    self.mouse.get_position()
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
+    Ok(output)
+  }
+}
+
+pub struct AsyncMoveTo {
+  x: i32,
+  y: i32,
+  mouse: MouseSync,
+}
+
+impl AsyncMoveTo {
+  pub fn new(x: i32, y: i32) -> Self {
+    Self {
+      x,
+      y,
+      mouse: MouseSync::new(),
+    }
+  }
+}
+
+#[napi]
+impl Task for AsyncMoveTo {
+  type Output = ();
+  type JsValue = ();
+
+  fn compute(&mut self) -> Result<Self::Output, Error> {
+    self.mouse.move_to(self.x, self.y)
+  }
+
+  fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
+    Ok(())
+  }
+}
+
+pub struct AsyncHumanlikeMoveTo {
+  x: i32,
+  y: i32,
+  duration: u32,
+  mouse: MouseSync,
+}
+
+impl AsyncHumanlikeMoveTo {
+  pub fn new(x: i32, y: i32, duration: u32) -> Self {
+    Self {
+      x,
+      y,
+      duration,
+      mouse: MouseSync::new(),
+    }
+  }
+}
+
+#[napi]
+impl Task for AsyncHumanlikeMoveTo {
+  type Output = ();
+  type JsValue = ();
+
+  fn compute(&mut self) -> Result<Self::Output, Error> {
+    self.mouse.humanlike_move_to(self.x, self.y, self.duration)
+  }
+
+  fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
+    Ok(())
+  }
+}
+
+pub struct AsyncClick {
+  button: MouseButton,
+  mouse: MouseSync,
+}
+
+impl AsyncClick {
+  pub fn new(mouse_button: MouseButton) -> Self {
+    Self {
+      button: mouse_button,
+      mouse: MouseSync::new(),
+    }
+  }
+}
+
+#[napi]
+impl Task for AsyncClick {
+  type Output = ();
+  type JsValue = ();
+
+  fn compute(&mut self) -> Result<Self::Output, Error> {
+    self.mouse.click(self.button)
+  }
+
+  fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
+    Ok(())
+  }
+}
+
+pub struct MouseSync {
+  enigo: Enigo,
+}
+
+impl MouseSync {
   pub fn new() -> Self {
-    Mouse {
+    MouseSync {
       enigo: Enigo::new(&Settings::default()).unwrap(),
     }
   }
 
-  #[napi]
   pub fn get_position(&self) -> Result<Position, Error> {
     Ok(self.enigo.location().map_err(MouseError::from)?.into())
   }
 
-  #[napi]
   pub fn move_to(&mut self, x: i32, y: i32) -> Result<(), Error> {
     self
       .enigo
@@ -119,14 +230,14 @@ impl Mouse {
     Ok(())
   }
 
-  #[napi]
   pub fn humanlike_move_to(&mut self, x: i32, y: i32, duration: u32) -> Result<(), Error> {
+    let target = Position { x, y };
+
     let step = 10;
     let minimum_distance = 50;
-    let original_target_position = Position { x, y };
     let mut rng = rand::rng();
     let mouse_position = self.get_position()?;
-    let mut target_position = Position { x, y };
+    let mut target_position = target.clone();
     let mut adjusted_duration = duration / step;
     let monitors = Monitor::all().map_err(MouseError::from)?;
     let monitor = monitors.first().expect("No monitor found");
@@ -145,8 +256,8 @@ impl Mouse {
       let magnitude_percentage = rng.random_range(0.0..=0.1);
       let magnitude = distance as f64 * magnitude_percentage;
 
-      target_position = (&original_target_position - &Position::from_polar(angle_turns, magnitude))
-        .clamp(&min_pos, &max_pos);
+      target_position =
+        (&target - &Position::from_polar(angle_turns, magnitude)).clamp(&min_pos, &max_pos);
       adjusted_duration = ((duration as f64 * (1.0 - magnitude_percentage) as f64) as u32) / step;
     }
 
@@ -168,18 +279,13 @@ impl Mouse {
 
     let new_position = self.get_position()?;
 
-    if Position::distance(&new_position, &original_target_position) >= 1 {
-      self.humanlike_move_to(
-        original_target_position.x,
-        original_target_position.y,
-        duration - adjusted_duration,
-      )?;
+    if Position::distance(&new_position, &target) >= 1 {
+      self.humanlike_move_to(x, y, duration - adjusted_duration)?;
     }
 
     Ok(())
   }
 
-  #[napi]
   pub fn click(&mut self, button: MouseButton) -> Result<(), Error> {
     self
       .enigo
@@ -187,5 +293,43 @@ impl Mouse {
       .map_err(MouseError::from)?;
 
     Ok(())
+  }
+}
+
+#[napi]
+pub struct Mouse {
+}
+
+#[napi]
+impl Mouse {
+  #[napi(constructor)]
+  pub fn new() -> Self {
+    Mouse {
+    }
+  }
+
+  #[napi]
+  pub fn get_position(&self) -> AsyncTask<AsyncGetPosition> {
+    AsyncTask::new(AsyncGetPosition::new())
+  }
+
+  #[napi]
+  pub fn move_to(&mut self, x: i32, y: i32) -> AsyncTask<AsyncMoveTo> {
+    AsyncTask::new(AsyncMoveTo::new(x, y))
+  }
+
+  #[napi]
+  pub fn humanlike_move_to(
+    &mut self,
+    x: i32,
+    y: i32,
+    duration: u32,
+  ) -> AsyncTask<AsyncHumanlikeMoveTo> {
+    AsyncTask::new(AsyncHumanlikeMoveTo::new(x, y, duration))
+  }
+
+  #[napi]
+  pub fn click(&mut self, button: MouseButton) -> AsyncTask<AsyncClick> {
+    AsyncTask::new(AsyncClick::new(button))
   }
 }

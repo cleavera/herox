@@ -2,6 +2,7 @@ use std::ops::{Add, Mul, Sub};
 use rand::Rng;
 
 #[napi]
+#[derive(Clone, Copy, Debug)]
 pub struct Position {
   pub x: i32,
   pub y: i32,
