@@ -3,9 +3,9 @@ use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use crate::image::Image;
 
 #[cfg(target_os = "windows")]
-mod windows_native;
+mod windows_backend;
 #[cfg(target_os = "windows")]
-use windows_native::WindowsWindow;
+use windows_backend::WindowsWindow;
 
 #[derive(Debug)]
 pub enum WindowError {
@@ -114,7 +114,7 @@ impl Window {
     pub fn all() -> Result<Vec<Window>, Error> {
         #[cfg(target_os = "windows")]
         {
-            windows_native::enumerate_windows_on_api_thread().map_err(|e| e.into())
+            crate::native_api::windows_backend::enumerate_windows_on_api_thread().map_err(|e| e.into())
         }
         #[cfg(not(target_os = "windows"))]
         {

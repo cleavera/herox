@@ -1,22 +1,25 @@
+#![cfg(target_os = "windows")]
+
 use windows::{
     Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE, FALSE},
     Win32::Graphics::Gdi::{BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY, GetDIBits, ReleaseDC, CreateCompatibleDC, CreateCompatibleBitmap, SelectObject, BitBlt, DeleteDC, DeleteObject, GetWindowDC},
     Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowRect, IsWindowVisible, GetForegroundWindow},
 };
 
-use crate::window::{NativeWindow, WindowError};
+use crate::window::{WindowError};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
+use std::sync::Once;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct WindowHandle(u64);
 
 impl WindowHandle {
-    fn new(hwnd: HWND) -> Self {
+    pub fn new(hwnd: HWND) -> Self {
         Self(hwnd.0 as u64)
     }
 
-    fn as_hwnd(&self) -> HWND {
+    pub fn as_hwnd(&self) -> HWND {
         HWND(self.0 as isize)
     }
 }
@@ -89,7 +92,7 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
                 }
             },
             WindowsApiCommand::Shutdown => {
-                response_sender.send(WindowsApiResponse::Ack).ok();
+                response_sender.send(WindowsApiResponse::Acknowledgement).ok();
                 break;
             },
         }
@@ -198,81 +201,6 @@ pub fn send_command_to_api_thread(command: WindowsApiCommand) -> Result<WindowsA
     }
 }
 
-#[cfg(target_os = "windows")]
-pub struct WindowsWindow {
-    handle: WindowHandle,
-}
-
-#[cfg(target_os = "windows")]
-impl Clone for WindowsWindow {
-    fn clone(&self) -> Self {
-        Self { handle: self.handle }
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl NativeWindow for WindowsWindow {
-    fn box_clone(&self) -> Box<dyn NativeWindow + Send + Sync> {
-        Box::new(self.clone())
-    }
-
-    fn title(&self) -> Result<String, WindowError> {
-        match send_command_to_api_thread(WindowsApiCommand::GetWindowTitle(self.handle))? {
-            WindowsApiResponse::WindowTitle(title) => Ok(title),
-            WindowsApiResponse::Error(e) => Err(e),
-            _ => Err(WindowError::ApiError("Unexpected response for GetWindowTitle".to_string())),
-        }
-    }
-
-    fn x(&self) -> Result<i32, WindowError> {
-        match send_command_to_api_thread(WindowsApiCommand::GetWindowRect(self.handle))? {
-            WindowsApiResponse::WindowRect(rect) => Ok(rect.left),
-            WindowsApiResponse::Error(e) => Err(e),
-            _ => Err(WindowError::ApiError("Unexpected response for GetWindowRect".to_string())),
-        }
-    }
-
-    fn y(&self) -> Result<i32, WindowError> {
-        match send_command_to_api_thread(WindowsApiCommand::GetWindowRect(self.handle))? {
-            WindowsApiResponse::WindowRect(rect) => Ok(rect.top),
-            WindowsApiResponse::Error(e) => Err(e),
-            _ => Err(WindowError::ApiError("Unexpected response for GetWindowRect".to_string())),
-        }
-    }
-
-    fn width(&self) -> Result<u32, WindowError> {
-        match send_command_to_api_thread(WindowsApiCommand::GetWindowRect(self.handle))? {
-            WindowsApiResponse::WindowRect(rect) => Ok((rect.right - rect.left) as u32),
-            WindowsApiResponse::Error(e) => Err(e),
-            _ => Err(WindowError::ApiError("Unexpected response for GetWindowRect".to_string())),
-        }
-    }
-
-    fn height(&self) -> Result<u32, WindowError> {
-        match send_command_to_api_thread(WindowsApiCommand::GetWindowRect(self.handle))? {
-            WindowsApiResponse::WindowRect(rect) => Ok((rect.bottom - rect.top) as u32),
-            WindowsApiResponse::Error(e) => Err(e),
-            _ => Err(WindowError::ApiError("Unexpected response for GetWindowRect".to_string())),
-        }
-    }
-
-    fn is_focused(&self) -> Result<bool, WindowError> {
-        match send_command_to_api_thread(WindowsApiCommand::IsWindowFocused(self.handle))? {
-            WindowsApiResponse::WindowFocused(focused) => Ok(focused),
-            WindowsApiResponse::Error(e) => Err(e),
-            _ => Err(WindowError::ApiError("Unexpected response for IsWindowFocused".to_string())),
-        }
-    }
-
-    fn capture_image(&self) -> Result<image::RgbaImage, WindowError> {
-        match send_command_to_api_thread(WindowsApiCommand::CaptureWindowImage(self.handle))? {
-            WindowsApiResponse::WindowImage(img) => Ok(img),
-            WindowsApiResponse::Error(e) => Err(e),
-            _ => Err(WindowError::ApiError("Unexpected response for CaptureWindowImage".to_string())),
-        }
-    }
-}
-
 pub extern "system" fn enum_windows_proc_for_thread(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let hwnds = unsafe { &mut *(lparam.0 as *mut Vec<WindowHandle>) };
     if unsafe { IsWindowVisible(hwnd) } == TRUE {
@@ -283,15 +211,4 @@ pub extern "system" fn enum_windows_proc_for_thread(hwnd: HWND, lparam: LPARAM) 
         }
     }
     TRUE
-}
-
-pub fn enumerate_windows_on_api_thread() -> Result<Vec<super::Window>, WindowError> {
-    let response = send_command_to_api_thread(WindowsApiCommand::EnumerateWindows)?;
-    match response {
-        WindowsApiResponse::WindowList(hwnds_raw) => {
-            Ok(hwnds_raw.into_iter().map(|handle| super::Window::from_native_impl(WindowsWindow { handle })).collect())
-        },
-        WindowsApiResponse::Error(e) => Err(e),
-        _ => Err(WindowError::ApiError("Unexpected response for EnumerateWindows".to_string())),
-    }
 }
