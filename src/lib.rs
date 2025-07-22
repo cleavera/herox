@@ -6,4 +6,3 @@ mod position;
 pub mod keyboard;
 pub mod window;
 pub mod image;
-

@@ -93,7 +93,7 @@ impl Window {
     pub fn new() -> Self {
         #[cfg(target_os = "windows")]
         {
-            panic!("Window::new() is not supported directly. Use Window::all() or specific platform constructors.");
+            panic!("Window::new() is not supported directly. Use Window::all().");
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -103,7 +103,6 @@ impl Window {
         }
     }
 
-    // Internal constructor for use by `Window::all()`
     #[cfg(target_os = "windows")]
     pub(crate) fn from_native_impl(native_window: WindowsWindow) -> Self {
         Window {
@@ -115,11 +114,7 @@ impl Window {
     pub fn all() -> Result<Vec<Window>, Error> {
         #[cfg(target_os = "windows")]
         {
-            let mut windows: Vec<Window> = Vec::new();
-            unsafe {
-                windows::Win32::UI::WindowsAndMessaging::EnumWindows(Some(windows_native::enum_windows_proc), windows::Win32::Foundation::LPARAM(&mut windows as *mut _ as isize));
-            }
-            Ok(windows)
+            windows_native::enumerate_windows_on_api_thread().map_err(|e| e.into())
         }
         #[cfg(not(target_os = "windows"))]
         {
