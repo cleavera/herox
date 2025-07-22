@@ -117,7 +117,7 @@ impl Window {
         {
             let mut windows: Vec<Window> = Vec::new();
             unsafe {
-                windows::Win32::UI::WindowsAndMessaging::EnumWindows(Some(windows::enum_windows_proc), windows::Win32::Foundation::LPARAM(&mut windows as *mut _ as isize));
+                windows::UI::WindowsAndMessaging::EnumWindows(Some(windows::enum_windows_proc), windows::Foundation::LPARAM(&mut windows as *mut _ as isize));
             }
             Ok(windows)
         }

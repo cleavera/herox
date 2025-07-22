@@ -1,7 +1,7 @@
 use windows::{
     Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE, FALSE},
     Win32::Graphics::Gdi::{BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY, GetDIBits, ReleaseDC, CreateCompatibleDC, CreateCompatibleBitmap, SelectObject, BitBlt, DeleteDC, DeleteObject, GetWindowDC},
-    Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, GetWindowRect, IsWindowVisible, GetForegroundWindow},
+    Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowRect, IsWindowVisible, GetForegroundWindow},
 };
 
 use crate::window::{NativeWindow, WindowError};
@@ -15,6 +15,7 @@ pub struct WindowsWindow {
 impl WindowsWindow {
     fn rect(&self) -> Result<RECT, WindowError> {
         let mut rect = RECT::default();
+        // GetWindowRect returns a BOOL, 0 for failure, non-zero for success
         if unsafe { GetWindowRect(self.hwnd, &mut rect) } == FALSE {
             Err(WindowError::ApiError("Failed to get window rect".to_string()))
         } else {
@@ -92,6 +93,7 @@ impl NativeWindow for WindowsWindow {
 
         let old_bitmap = unsafe { SelectObject(mem_dc, mem_bitmap) };
 
+        // BitBlt returns a BOOL, 0 for failure, non-zero for success
         if unsafe { BitBlt(mem_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY) } == FALSE {
             unsafe { SelectObject(mem_dc, old_bitmap) };
             unsafe { DeleteObject(mem_bitmap) };
@@ -128,13 +130,6 @@ impl NativeWindow for WindowsWindow {
             &mut bmi as *mut _,
             DIB_RGB_COLORS,
         ) };
-
-        unsafe {
-            SelectObject(mem_dc, old_bitmap);
-            DeleteObject(mem_bitmap);
-            DeleteDC(mem_dc);
-            ReleaseDC(self.hwnd, hdc);
-        }
 
         if result == 0 {
             return Err(WindowError::ApiError("Failed to get DIBits".to_string()));
