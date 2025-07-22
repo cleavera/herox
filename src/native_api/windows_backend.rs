@@ -7,11 +7,12 @@ use windows::{
     GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY,
   },
   Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowRect, GetWindowTextW, IsWindowVisible,
+    EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextW, IsWindowVisible,
   },
 };
 
 use crate::window::WindowError;
+use core::ffi::c_void;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Once;
 use std::thread;
@@ -25,7 +26,7 @@ impl WindowHandle {
   }
 
   pub fn as_hwnd(&self) -> HWND {
-    HWND(self.0 as isize)
+    HWND(self.0 as *mut c_void)
   }
 }
 
@@ -54,12 +55,12 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
       WindowsApiCommand::EnumerateWindows => {
         let mut hwnds: Vec<WindowHandle> = Vec::new();
         let result = unsafe {
-          windows::Win32::UI::WindowsAndMessaging::EnumWindows(
+          EnumWindows(
             Some(enum_windows_proc_for_thread),
             LPARAM(&mut hwnds as *mut _ as isize),
           )
         };
-        if result == FALSE {
+        if result.is_err() {
           response_sender
             .send(WindowsApiResponse::Error(WindowError::ApiError(
               "EnumWindows failed".to_string(),
@@ -90,7 +91,7 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
       WindowsApiCommand::GetWindowRect(handle) => {
         let hwnd = handle.as_hwnd();
         let mut rect = RECT::default();
-        if unsafe { GetWindowRect(hwnd, &mut rect) } == FALSE {
+        if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
           response_sender
             .send(WindowsApiResponse::Error(WindowError::ApiError(
               "Failed to get window rect".to_string(),
@@ -112,10 +113,14 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
       WindowsApiCommand::CaptureWindowImage(handle) => {
         let hwnd = handle.as_hwnd();
         match capture_window_image_internal(hwnd) {
-          Ok(img) => response_sender
-            .send(WindowsApiResponse::WindowImage(img))
-            .ok(),
-          Err(e) => response_sender.send(WindowsApiResponse::Error(e)).ok(),
+          Ok(img) => {
+            response_sender
+              .send(WindowsApiResponse::WindowImage(img))
+              .ok();
+          }
+          Err(e) => {
+            response_sender.send(WindowsApiResponse::Error(e)).ok();
+          }
         }
       }
       WindowsApiCommand::Shutdown => {
@@ -130,7 +135,7 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
 
 fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowError> {
   let mut rect = RECT::default();
-  if unsafe { GetWindowRect(hwnd, &mut rect) } == FALSE {
+  if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
     return Err(WindowError::ApiError(
       "Failed to get window rect".to_string(),
     ));
@@ -165,7 +170,7 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
 
   let old_bitmap = unsafe { SelectObject(mem_dc, mem_bitmap) };
 
-  if unsafe { BitBlt(mem_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY) } == FALSE {
+  if unsafe { BitBlt(mem_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY) }.is_err() {
     unsafe { SelectObject(mem_dc, old_bitmap) };
     unsafe { DeleteObject(mem_bitmap) };
     unsafe { DeleteDC(mem_dc) };
@@ -179,10 +184,10 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
     bmiHeader: BITMAPINFOHEADER {
       biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
       biWidth: width,
-      biHeight: -height, // top-down
+      biHeight: -height,
       biPlanes: 1,
       biBitCount: 32,
-      biCompression: 0, // BI_RGB
+      biCompression: 0,
       biSizeImage: 0,
       biXPelsPerMeter: 0,
       biYPelsPerMeter: 0,
@@ -210,7 +215,6 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
     return Err(WindowError::ApiError("Failed to get DIBits".to_string()));
   }
 
-  // BGRA to RGBA
   for chunk in buffer.chunks_mut(4) {
     chunk.swap(0, 2);
   }
@@ -240,9 +244,9 @@ pub fn send_command_to_api_thread(
       sender.send((command, response_sender)).map_err(|e| {
         WindowError::ApiError(format!("Failed to send command to API thread: {}", e))
       })?;
-      response_receiver.recv().map_err(|e| {
+      Ok(response_receiver.recv().map_err(|e| {
         WindowError::ApiError(format!("Failed to receive response from API thread: {}", e))
-      })?
+      })?)
     } else {
       Err(WindowError::ApiError(
         "Windows API thread not initialized after call_once".to_string(),
