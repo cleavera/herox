@@ -1,5 +1,5 @@
 use napi::{bindgen_prelude::AsyncTask, Env, Error, JsNumber, Task};
-use xcap::image::{Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 
 #[napi(object)]
 pub struct Pixel {

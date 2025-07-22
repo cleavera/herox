@@ -1,6 +1,5 @@
 use enigo::{Enigo, InputError, Settings};
 use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
-use xcap::{Monitor, XCapError};
 
 use std::{
   sync::{Arc, Mutex},
@@ -98,13 +97,7 @@ impl From<InputError> for MouseError {
   }
 }
 
-impl From<XCapError> for MouseError {
-  fn from(value: XCapError) -> Self {
-    MouseError {
-      message: value.to_string(),
-    }
-  }
-}
+
 
 pub struct AsyncGetPosition {
   mouse: Arc<Mutex<MouseSync>>,
@@ -257,15 +250,13 @@ impl MouseSync {
     let mouse_position = self.get_position()?;
     let mut target_position = target.clone();
     let mut adjusted_duration = duration / step;
-    let monitors = Monitor::all().map_err(MouseError::from)?;
-    let monitor = monitors.first().expect("No monitor found");
-
+    let (width, height) = self.enigo.main_display().map_err(MouseError::from)?;
     let min_pos = Position::new(0, 0);
 
     let max_pos = &min_pos
       + &Position::new(
-        monitor.width().map_err(MouseError::from)? as i32,
-        monitor.height().map_err(MouseError::from)? as i32,
+        width,
+        height,
       );
 
     let distance = Position::distance(&mouse_position, &target_position);
