@@ -1,7 +1,7 @@
 #![cfg(target_os = "windows")]
 
 use windows::{
-  Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, RECT, TRUE},
+  Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE},
   Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
     GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY,
@@ -13,6 +13,7 @@ use windows::{
 
 use crate::window::WindowError;
 use core::ffi::c_void;
+use once_cell::sync::OnceCell;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Once;
 use std::thread;
@@ -153,7 +154,9 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
 
   let mem_dc = unsafe { CreateCompatibleDC(hdc) };
   if mem_dc.0.is_null() {
-    unsafe { ReleaseDC(hwnd, hdc) };
+    unsafe {
+      let _ = ReleaseDC(hwnd, hdc);
+    };
     return Err(WindowError::ApiError(
       "Failed to create compatible DC".to_string(),
     ));
@@ -161,8 +164,12 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
 
   let mem_bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };
   if mem_bitmap.0.is_null() {
-    unsafe { DeleteDC(mem_dc) };
-    unsafe { ReleaseDC(hwnd, hdc) };
+    unsafe {
+      let _ = DeleteDC(mem_dc);
+    };
+    unsafe {
+      let _ = ReleaseDC(hwnd, hdc);
+    };
     return Err(WindowError::ApiError(
       "Failed to create compatible bitmap".to_string(),
     ));
@@ -171,10 +178,18 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
   let old_bitmap = unsafe { SelectObject(mem_dc, mem_bitmap) };
 
   if unsafe { BitBlt(mem_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY) }.is_err() {
-    unsafe { SelectObject(mem_dc, old_bitmap) };
-    unsafe { DeleteObject(mem_bitmap) };
-    unsafe { DeleteDC(mem_dc) };
-    unsafe { ReleaseDC(hwnd, hdc) };
+    unsafe {
+      let _ = SelectObject(mem_dc, old_bitmap);
+    };
+    unsafe {
+      let _ = DeleteObject(mem_bitmap);
+    };
+    unsafe {
+      let _ = DeleteDC(mem_dc);
+    };
+    unsafe {
+      let _ = ReleaseDC(hwnd, hdc);
+    };
     return Err(WindowError::ApiError(
       "Failed to copy screen to bitmap".to_string(),
     ));
@@ -223,8 +238,8 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
     .ok_or_else(|| WindowError::InvalidBitmap)
 }
 
-static mut WINDOWS_API_SENDER: Option<Sender<(WindowsApiCommand, Sender<WindowsApiResponse>)>> =
-  None;
+static WINDOWS_API_SENDER: OnceCell<Sender<(WindowsApiCommand, Sender<WindowsApiResponse>)>> =
+  OnceCell::new();
 static INIT_WINDOWS_API_THREAD: Once = Once::new();
 
 pub fn send_command_to_api_thread(
@@ -232,27 +247,18 @@ pub fn send_command_to_api_thread(
 ) -> Result<WindowsApiResponse, WindowError> {
   INIT_WINDOWS_API_THREAD.call_once(|| {
     let (sender, receiver) = channel();
-    unsafe {
-      WINDOWS_API_SENDER = Some(sender);
-    }
+    WINDOWS_API_SENDER.set(sender).unwrap();
     thread::spawn(move || windows_api_thread_main(receiver));
   });
 
   let (response_sender, response_receiver) = channel();
-  unsafe {
-    if let Some(sender) = &WINDOWS_API_SENDER {
-      sender.send((command, response_sender)).map_err(|e| {
-        WindowError::ApiError(format!("Failed to send command to API thread: {}", e))
-      })?;
-      Ok(response_receiver.recv().map_err(|e| {
-        WindowError::ApiError(format!("Failed to receive response from API thread: {}", e))
-      })?)
-    } else {
-      Err(WindowError::ApiError(
-        "Windows API thread not initialized after call_once".to_string(),
-      ))
-    }
-  }
+  let sender = WINDOWS_API_SENDER.get().unwrap();
+  sender
+    .send((command, response_sender))
+    .map_err(|e| WindowError::ApiError(format!("Failed to send command to API thread: {}", e)))?;
+  Ok(response_receiver.recv().map_err(|e| {
+    WindowError::ApiError(format!("Failed to receive response from API thread: {}", e))
+  })?)
 }
 
 pub extern "system" fn enum_windows_proc_for_thread(hwnd: HWND, lparam: LPARAM) -> BOOL {
