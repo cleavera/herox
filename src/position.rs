@@ -1,5 +1,5 @@
-use std::ops::{Add, Mul, Sub};
 use rand::Rng;
+use std::ops::{Add, Mul, Sub};
 
 #[napi]
 #[derive(Clone, Copy, Debug)]
@@ -82,10 +82,7 @@ impl Position {
   }
 
   pub fn clamp(&self, min: &Position, max: &Position) -> Self {
-    Position::new(
-      self.x.clamp(min.x, max.x),
-      self.y.clamp(min.y, max.y),
-    )
+    Position::new(self.x.clamp(min.x, max.x), self.y.clamp(min.y, max.y))
   }
 }
 
@@ -109,7 +106,10 @@ impl Mul<f64> for &Position {
   type Output = Position;
 
   fn mul(self, rhs: f64) -> Self::Output {
-    Position::new(((self.x as f64) * rhs) as i32, ((self.y as f64) * rhs) as i32)
+    Position::new(
+      ((self.x as f64) * rhs) as i32,
+      ((self.y as f64) * rhs) as i32,
+    )
   }
 }
 

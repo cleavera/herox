@@ -97,8 +97,6 @@ impl From<InputError> for MouseError {
   }
 }
 
-
-
 pub struct AsyncGetPosition {
   mouse: Arc<Mutex<MouseSync>>,
 }
@@ -135,11 +133,7 @@ pub struct AsyncMoveTo {
 
 impl AsyncMoveTo {
   pub fn new(x: i32, y: i32, mouse: Arc<Mutex<MouseSync>>) -> Self {
-    Self {
-      x,
-      y,
-      mouse,
-    }
+    Self { x, y, mouse }
   }
 }
 
@@ -149,7 +143,11 @@ impl Task for AsyncMoveTo {
   type JsValue = ();
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    self.mouse.try_lock().map_err(|_| MouseError::locked())?.move_to(self.x, self.y)
+    self
+      .mouse
+      .try_lock()
+      .map_err(|_| MouseError::locked())?
+      .move_to(self.x, self.y)
   }
 
   fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
@@ -181,7 +179,11 @@ impl Task for AsyncHumanlikeMoveTo {
   type JsValue = ();
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    self.mouse.try_lock().map_err(|_| MouseError::locked())?.humanlike_move_to(self.x, self.y, self.duration)
+    self
+      .mouse
+      .try_lock()
+      .map_err(|_| MouseError::locked())?
+      .humanlike_move_to(self.x, self.y, self.duration)
   }
 
   fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
@@ -209,7 +211,11 @@ impl Task for AsyncClick {
   type JsValue = ();
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    self.mouse.try_lock().map_err(|_| MouseError::locked())?.click(self.button)
+    self
+      .mouse
+      .try_lock()
+      .map_err(|_| MouseError::locked())?
+      .click(self.button)
   }
 
   fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<(), Error> {
@@ -253,11 +259,7 @@ impl MouseSync {
     let (width, height) = self.enigo.main_display().map_err(MouseError::from)?;
     let min_pos = Position::new(0, 0);
 
-    let max_pos = &min_pos
-      + &Position::new(
-        width,
-        height,
-      );
+    let max_pos = &min_pos + &Position::new(width, height);
 
     let distance = Position::distance(&mouse_position, &target_position);
     if distance > minimum_distance {
@@ -336,7 +338,12 @@ impl Mouse {
     y: i32,
     duration: u32,
   ) -> AsyncTask<AsyncHumanlikeMoveTo> {
-    AsyncTask::new(AsyncHumanlikeMoveTo::new(x, y, duration, self.mouse.clone()))
+    AsyncTask::new(AsyncHumanlikeMoveTo::new(
+      x,
+      y,
+      duration,
+      self.mouse.clone(),
+    ))
   }
 
   #[napi]

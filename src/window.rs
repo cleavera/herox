@@ -7,89 +7,82 @@ mod windows_backend;
 #[cfg(target_os = "windows")]
 use windows_backend::WindowsWindow;
 
-#[cfg(not(target_os = "windows"))]
 mod unsupported_backend;
-#[cfg(not(target_os = "windows"))]
 use unsupported_backend::UnsupportedOSWindow;
 
 #[derive(Debug)]
 pub enum WindowError {
-    ApiError(String),
-    EmptyTitle,
-    InvalidBitmap,
-    UnsupportedPlatform,
+  ApiError(String),
+  EmptyTitle,
+  InvalidBitmap,
+  UnsupportedPlatform,
 }
 
 impl From<WindowError> for Error {
   fn from(value: WindowError) -> Error {
     let message = match value {
-        WindowError::ApiError(s) => s,
-        WindowError::EmptyTitle => "Window title is empty".to_string(),
-        WindowError::InvalidBitmap => "Invalid bitmap".to_string(),
-        WindowError::UnsupportedPlatform => "This operation is not supported on the current platform".to_string(),
+      WindowError::ApiError(s) => s,
+      WindowError::EmptyTitle => "Window title is empty".to_string(),
+      WindowError::InvalidBitmap => "Invalid bitmap".to_string(),
+      WindowError::UnsupportedPlatform => {
+        "This operation is not supported on the current platform".to_string()
+      }
     };
     Error::from_reason(message)
   }
 }
 
 pub trait NativeWindow {
-    fn box_clone(&self) -> Box<dyn NativeWindow + Send + Sync>;
-    fn title(&self) -> Result<String, WindowError>;
-    fn x(&self) -> Result<i32, WindowError>;
-    fn y(&self) -> Result<i32, WindowError>;
-    fn width(&self) -> Result<u32, WindowError>;
-    fn height(&self) -> Result<u32, WindowError>;
-    fn is_focused(&self) -> Result<bool, WindowError>;
-    fn capture_image(&self) -> Result<image::RgbaImage, WindowError>;
+  fn box_clone(&self) -> Box<dyn NativeWindow + Send + Sync>;
+  fn title(&self) -> Result<String, WindowError>;
+  fn x(&self) -> Result<i32, WindowError>;
+  fn y(&self) -> Result<i32, WindowError>;
+  fn width(&self) -> Result<u32, WindowError>;
+  fn height(&self) -> Result<u32, WindowError>;
+  fn is_focused(&self) -> Result<bool, WindowError>;
+  fn capture_image(&self) -> Result<image::RgbaImage, WindowError>;
 }
 
 #[napi]
 pub struct Window {
-    native_window: Box<dyn NativeWindow + Send + Sync>,
+  native_window: Box<dyn NativeWindow + Send + Sync>,
 }
 
 impl Clone for Window {
-    fn clone(&self) -> Self {
-        Self {
-            native_window: self.native_window.box_clone(),
-        }
+  fn clone(&self) -> Self {
+    Self {
+      native_window: self.native_window.box_clone(),
     }
+  }
 }
 
 #[napi]
 impl Window {
-    #[napi(constructor)]
-    pub fn new() -> Self {
-        #[cfg(target_os = "windows")]
-        {
-            panic!("Window::new() is not supported directly. Use Window::all().");
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            Window {
-                native_window: Box::new(UnsupportedOSWindow),
-            }
-        }
-    }
-
+  #[napi(constructor)]
+  pub fn new() -> Self {
     #[cfg(target_os = "windows")]
-    pub(crate) fn from_native_impl(native_window: WindowsWindow) -> Self {
-        Window {
-            native_window: Box::new(native_window),
-        }
+    {
+      panic!("Window::new() is not supported directly. Use Window::all().");
     }
+    #[cfg(not(target_os = "windows"))]
+    {
+      Window {
+        native_window: Box::new(UnsupportedOSWindow),
+      }
+    }
+  }
 
-    #[napi]
-    pub fn all() -> Result<Vec<Window>, Error> {
-        #[cfg(target_os = "windows")]
-        {
-            crate::native_api::windows_backend::enumerate_windows_on_api_thread().map_err(|e| e.into())
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            Err(WindowError::UnsupportedPlatform.into())
-        }
+  #[napi]
+  pub fn all() -> Result<Vec<Window>, Error> {
+    #[cfg(target_os = "windows")]
+    {
+      crate::native_api::windows_backend::enumerate_windows_on_api_thread().map_err(|e| e.into())
     }
+    #[cfg(not(target_os = "windows"))]
+    {
+      Err(WindowError::UnsupportedPlatform.into())
+    }
+  }
 
   #[napi]
   pub fn title(&self) -> Result<String, Error> {

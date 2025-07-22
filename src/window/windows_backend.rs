@@ -3,7 +3,7 @@
 use crate::native_api::windows_backend::{
   send_command_to_api_thread, WindowHandle, WindowsApiCommand, WindowsApiResponse,
 };
-use crate::window::{NativeWindow, WindowError};
+use crate::window::{NativeWindow, Window, WindowError};
 
 pub struct WindowsWindow {
   handle: WindowHandle,
@@ -13,6 +13,14 @@ impl Clone for WindowsWindow {
   fn clone(&self) -> Self {
     Self {
       handle: self.handle,
+    }
+  }
+}
+
+impl Into<Window> for WindowsWindow {
+  fn into(self) -> Window {
+    Window {
+      native_window: Box::new(self),
     }
   }
 }

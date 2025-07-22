@@ -1,5 +1,5 @@
-use napi::{bindgen_prelude::AsyncTask, Env, Error, JsNumber, Task};
 use image::{Rgba, RgbaImage};
+use napi::{bindgen_prelude::AsyncTask, Env, Error, JsNumber, Task};
 
 #[napi(object)]
 pub struct Pixel {
@@ -58,18 +58,30 @@ impl Image {
   }
 
   #[napi(ts_return_type = "Promise<number>")]
-  pub fn check_feature(&self, x: u32, y: u32, feature: Feature, max_color_distance_percent: f64) -> AsyncTask<AsyncCheckFeature> {
+  pub fn check_feature(
+    &self,
+    x: u32,
+    y: u32,
+    feature: Feature,
+    max_color_distance_percent: f64,
+  ) -> AsyncTask<AsyncCheckFeature> {
     AsyncTask::new(AsyncCheckFeature::new(
       x,
       y,
       feature,
       self.rgba_image.clone(),
-      max_color_distance_percent
+      max_color_distance_percent,
     ))
   }
 
   #[napi(ts_return_type = "Promise<Feature>")]
-  pub fn get_feature(&self, start_x: u32, start_y: u32, end_x: u32, end_y : u32) -> AsyncTask<AsyncGetFeature> {
+  pub fn get_feature(
+    &self,
+    start_x: u32,
+    start_y: u32,
+    end_x: u32,
+    end_y: u32,
+  ) -> AsyncTask<AsyncGetFeature> {
     AsyncTask::new(AsyncGetFeature::new(
       start_x,
       start_y,
@@ -328,7 +340,13 @@ pub struct AsyncCheckFeature {
 }
 
 impl AsyncCheckFeature {
-  pub fn new(x: u32, y: u32, feature: Feature, rgba_image: RgbaImage, color_tolerance_percent: f64) -> Self {
+  pub fn new(
+    x: u32,
+    y: u32,
+    feature: Feature,
+    rgba_image: RgbaImage,
+    color_tolerance_percent: f64,
+  ) -> Self {
     Self {
       x,
       y,
@@ -347,46 +365,55 @@ impl Task for AsyncCheckFeature {
   type JsValue = f64;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-      if self.feature.pixels.is_empty() {
-            return Err(Error::from_reason("This feature has no pixels"));
+    if self.feature.pixels.is_empty() {
+      return Err(Error::from_reason("This feature has no pixels"));
+    }
+
+    let min_feat_x = self.feature.pixels.iter().map(|p| p.x).min().unwrap_or(0);
+    let min_feat_y = self.feature.pixels.iter().map(|p| p.y).min().unwrap_or(0);
+    let max_feat_x = self.feature.pixels.iter().map(|p| p.x).max().unwrap_or(0);
+    let max_feat_y = self.feature.pixels.iter().map(|p| p.y).max().unwrap_or(0);
+
+    let feature_width = max_feat_x - min_feat_x + 1;
+    let feature_height = max_feat_y - min_feat_y + 1;
+
+    if self.x + feature_width > self.width || self.y + feature_height > self.height {
+      return Err(Error::from_reason(
+        "Feature, when placed at the given top_left point, extends beyond image boundaries.",
+      ));
+    }
+
+    const MAX_COLOR_DISTANCE: f64 = 510.0;
+    let actual_color_tolerance_value = MAX_COLOR_DISTANCE * self.color_tolerance_percent;
+    let use_alpha_for_comparison = true;
+
+    let mut matching_pixels_count = 0;
+    let total_pixels_to_check = self.feature.pixels.len();
+
+    for feature_pixel in &self.feature.pixels {
+      let current_image_x = self.x + (feature_pixel.x - min_feat_x);
+      let current_image_y = self.y + (feature_pixel.y - min_feat_y);
+
+      if let Some(img_pixel_rgba) = self
+        .rgba_image
+        .get_pixel_checked(current_image_x, current_image_y)
+      {
+        let img_pixel_rgba_u32 = rgba_into_rgba_number(img_pixel_rgba);
+        let distance = color_distance(
+          feature_pixel.rgba,
+          img_pixel_rgba_u32,
+          use_alpha_for_comparison,
+        );
+
+        if distance <= actual_color_tolerance_value {
+          matching_pixels_count += 1;
         }
+      }
+    }
 
-        let min_feat_x = self.feature.pixels.iter().map(|p| p.x).min().unwrap_or(0);
-        let min_feat_y = self.feature.pixels.iter().map(|p| p.y).min().unwrap_or(0);
-        let max_feat_x = self.feature.pixels.iter().map(|p| p.x).max().unwrap_or(0);
-        let max_feat_y = self.feature.pixels.iter().map(|p| p.y).max().unwrap_or(0);
+    let percentage_match = matching_pixels_count as f64 / total_pixels_to_check as f64;
 
-        let feature_width = max_feat_x - min_feat_x + 1;
-        let feature_height = max_feat_y - min_feat_y + 1;
-
-        if self.x + feature_width > self.width || self.y + feature_height > self.height {
-            return Err(Error::from_reason("Feature, when placed at the given top_left point, extends beyond image boundaries."));
-        }
-
-        const MAX_COLOR_DISTANCE: f64 = 510.0;
-        let actual_color_tolerance_value = MAX_COLOR_DISTANCE * self.color_tolerance_percent;
-        let use_alpha_for_comparison = true;
-
-        let mut matching_pixels_count = 0;
-        let total_pixels_to_check = self.feature.pixels.len();
-
-        for feature_pixel in &self.feature.pixels {
-            let current_image_x = self.x + (feature_pixel.x - min_feat_x);
-            let current_image_y = self.y + (feature_pixel.y - min_feat_y);
-
-            if let Some(img_pixel_rgba) = self.rgba_image.get_pixel_checked(current_image_x, current_image_y) {
-                let img_pixel_rgba_u32 = rgba_into_rgba_number(img_pixel_rgba);
-                let distance = color_distance(feature_pixel.rgba, img_pixel_rgba_u32, use_alpha_for_comparison);
-
-                if distance <= actual_color_tolerance_value {
-                    matching_pixels_count += 1;
-                }
-            }
-        }
-
-        let percentage_match = matching_pixels_count as f64 / total_pixels_to_check as f64;
-
-        Ok(percentage_match)
+    Ok(percentage_match)
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
