@@ -8,7 +8,6 @@ mod windows_backend;
 use windows_backend::WindowsWindow;
 
 mod unsupported_backend;
-use unsupported_backend::UnsupportedOSWindow;
 
 #[derive(Debug)]
 pub enum WindowError {
@@ -60,23 +59,21 @@ impl Clone for Window {
 impl Window {
   #[napi(constructor)]
   pub fn new() -> Self {
-    #[cfg(target_os = "windows")]
-    {
-      panic!("Window::new() is not supported directly. Use Window::all().");
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-      Window {
-        native_window: Box::new(UnsupportedOSWindow),
-      }
-    }
+    panic!("Do not call `new Window()`. Use `Window.all()` to get window instances.");
   }
 
   #[napi]
   pub fn all() -> Result<Vec<Window>, Error> {
     #[cfg(target_os = "windows")]
     {
-      crate::native_api::windows_backend::enumerate_windows_on_api_thread().map_err(|e| e.into())
+      crate::native_api::windows_backend::enumerate_windows_on_api_thread()
+        .map_err(|e| e.into())
+        .map(|windows_backend_windows| {
+          windows_backend_windows
+            .into_iter()
+            .map(|w| w.into())
+            .collect()
+        })
     }
     #[cfg(not(target_os = "windows"))]
     {
