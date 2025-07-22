@@ -3,9 +3,9 @@ use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use crate::image::Image;
 
 #[cfg(target_os = "windows")]
-mod windows;
+mod windows_native;
 #[cfg(target_os = "windows")]
-use windows::WindowsWindow;
+use windows_native::WindowsWindow;
 
 #[derive(Debug)]
 pub enum WindowError {
@@ -117,7 +117,7 @@ impl Window {
         {
             let mut windows: Vec<Window> = Vec::new();
             unsafe {
-                windows::UI::WindowsAndMessaging::EnumWindows(Some(windows::enum_windows_proc), windows::Foundation::LPARAM(&mut windows as *mut _ as isize));
+                windows::Win32::UI::WindowsAndMessaging::EnumWindows(Some(windows_native::enum_windows_proc), windows::Win32::Foundation::LPARAM(&mut windows as *mut _ as isize));
             }
             Ok(windows)
         }
