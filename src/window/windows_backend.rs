@@ -3,7 +3,7 @@
 use crate::native_api::windows_backend::{
   send_command_to_api_thread, WindowHandle, WindowsApiCommand, WindowsApiResponse,
 };
-use crate::window::{NativeWindow, Window, WindowError};
+use crate::window::{NativeWindow, NativeWindowFactory, Window, WindowError};
 
 pub struct WindowsWindow {
   handle: WindowHandle,
@@ -96,6 +96,27 @@ impl NativeWindow for WindowsWindow {
       WindowsApiResponse::Error(e) => Err(e),
       _ => Err(WindowError::ApiError(
         "Unexpected response for CaptureWindowImage".to_string(),
+      )),
+    }
+  }
+}
+
+impl NativeWindowFactory for WindowsWindow {
+  fn all_windows() -> Result<Vec<Window>, WindowError>
+  where
+    Self: Sized,
+  {
+    let response = send_command_to_api_thread(WindowsApiCommand::EnumerateWindows)?;
+    match response {
+      WindowsApiResponse::WindowList(hwnds_raw) => Ok(
+        hwnds_raw
+          .into_iter()
+          .map(|handle| WindowsWindow { handle }.into())
+          .collect(),
+      ),
+      WindowsApiResponse::Error(e) => Err(e),
+      _ => Err(WindowError::ApiError(
+        "Unexpected response for EnumerateWindows".to_string(),
       )),
     }
   }

@@ -1,4 +1,4 @@
-use crate::window::{NativeWindow, WindowError};
+use crate::window::{NativeWindow, NativeWindowFactory, Window, WindowError};
 
 pub struct UnsupportedOSWindow;
 
@@ -32,6 +32,15 @@ impl NativeWindow for UnsupportedOSWindow {
   }
 
   fn capture_image(&self) -> Result<image::RgbaImage, WindowError> {
+    Err(WindowError::UnsupportedPlatform)
+  }
+}
+
+impl NativeWindowFactory for UnsupportedOSWindow {
+  fn all_windows() -> Result<Vec<Window>, WindowError>
+  where
+    Self: Sized,
+  {
     Err(WindowError::UnsupportedPlatform)
   }
 }

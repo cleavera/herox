@@ -42,6 +42,12 @@ pub trait NativeWindow {
   fn capture_image(&self) -> Result<image::RgbaImage, WindowError>;
 }
 
+pub trait NativeWindowFactory {
+  fn all_windows() -> Result<Vec<Window>, WindowError>
+  where
+    Self: Sized;
+}
+
 #[napi]
 pub struct Window {
   native_window: Box<dyn NativeWindow + Send + Sync>,
@@ -66,18 +72,11 @@ impl Window {
   pub fn all() -> Result<Vec<Window>, Error> {
     #[cfg(target_os = "windows")]
     {
-      crate::native_api::windows_backend::enumerate_windows_on_api_thread()
-        .map_err(|e| e.into())
-        .map(|windows_backend_windows| {
-          windows_backend_windows
-            .into_iter()
-            .map(|w| w.into())
-            .collect()
-        })
+      WindowsWindow::all_windows().map_err(|e| e.into())
     }
     #[cfg(not(target_os = "windows"))]
     {
-      Err(WindowError::UnsupportedPlatform.into())
+      unsupported_backend::UnsupportedOSWindow::all_windows().map_err(|e| e.into())
     }
   }
 
