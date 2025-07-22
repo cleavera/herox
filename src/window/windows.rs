@@ -1,8 +1,7 @@
 use windows::{
-    core::PCWSTR,
     Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE, FALSE},
-    Win32::Graphics::Gdi::{GetDC, GetObjectW, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY, GetDIBits, ReleaseDC, CreateCompatibleDC, CreateCompatibleBitmap, SelectObject, BitBlt, DeleteDC, DeleteObject, GetWindowDC},
-    Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, GetWindowRect, IsWindowVisible, GetWindowInfo, WINDOWINFO, GetForegroundWindow},
+    Win32::Graphics::Gdi::{BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY, GetDIBits, ReleaseDC, CreateCompatibleDC, CreateCompatibleBitmap, SelectObject, BitBlt, DeleteDC, DeleteObject, GetWindowDC},
+    Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, GetWindowRect, IsWindowVisible, GetForegroundWindow},
 };
 
 use crate::window::{NativeWindow, WindowError};
@@ -39,7 +38,7 @@ impl NativeWindow for WindowsWindow {
 
     fn title(&self) -> Result<String, WindowError> {
         let mut text: [u16; 512] = [0; 512];
-        let len = unsafe { GetWindowTextW(self.hwnd, text.as_mut_ptr(), text.len() as i32) };
+        let len = unsafe { GetWindowTextW(self.hwnd, &mut text) };
         if len == 0 {
             return Ok("".to_string());
         }
@@ -74,18 +73,18 @@ impl NativeWindow for WindowsWindow {
         let height = (rect.bottom - rect.top) as i32;
 
         let hdc = unsafe { GetWindowDC(self.hwnd) };
-        if hdc.is_null() {
+        if hdc.0.is_null() {
             return Err(WindowError::ApiError("Failed to get device context".to_string()));
         }
 
         let mem_dc = unsafe { CreateCompatibleDC(hdc) };
-        if mem_dc.is_null() {
+        if mem_dc.0.is_null() {
             unsafe { ReleaseDC(self.hwnd, hdc) };
             return Err(WindowError::ApiError("Failed to create compatible DC".to_string()));
         }
 
         let mem_bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };
-        if mem_bitmap.is_null() {
+        if mem_bitmap.0.is_null() {
             unsafe { DeleteDC(mem_dc) };
             unsafe { ReleaseDC(self.hwnd, hdc) };
             return Err(WindowError::ApiError("Failed to create compatible bitmap".to_string()));
@@ -152,11 +151,11 @@ impl NativeWindow for WindowsWindow {
 }
 
 #[cfg(target_os = "windows")]
-extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+pub extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let windows = unsafe { &mut *(lparam.0 as *mut Vec<super::Window>) };
     if unsafe { IsWindowVisible(hwnd) } == TRUE {
         let mut text: [u16; 512] = [0; 512];
-        let len = unsafe { GetWindowTextW(hwnd, text.as_mut_ptr(), text.len() as i32) };
+        let len = unsafe { GetWindowTextW(hwnd, &mut text) };
         if len > 0 {
             windows.push(super::Window::from_native_impl(WindowsWindow { hwnd }));
         }
