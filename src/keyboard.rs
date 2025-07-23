@@ -2,7 +2,7 @@ use enigo::{
   Direction::{Click, Press, Release},
   Enigo, InputError, Key as EnigoKey, Keyboard as EnigoKeyboard, Settings,
 };
-use napi::{bindgen_prelude::FromNapiValue, Error, JsObject, JsUnknown, ValueType};
+use napi::{bindgen_prelude::{FromNapiValue, Object}, Error, Unknown, ValueType};
 
 #[napi(string_enum)]
 pub enum SpecialKey {
@@ -207,7 +207,7 @@ impl Keyboard {
   }
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
-  pub fn key_down(&mut self, key: JsUnknown) -> Result<(), Error> {
+  pub fn key_down(&mut self, key: Unknown) -> Result<(), Error> {
     self
       .enigo
       .key(Self::get_key(key)?, Press)
@@ -217,7 +217,7 @@ impl Keyboard {
   }
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
-  pub fn key_up(&mut self, key: JsUnknown) -> Result<(), Error> {
+  pub fn key_up(&mut self, key: Unknown) -> Result<(), Error> {
     self
       .enigo
       .key(Self::get_key(key)?, Release)
@@ -227,7 +227,7 @@ impl Keyboard {
   }
 
   #[napi(ts_args_type = "key: UnicodeKey | SpecialKey")]
-  pub fn key_press(&mut self, key: JsUnknown) -> Result<(), Error> {
+  pub fn key_press(&mut self, key: Unknown) -> Result<(), Error> {
     self
       .enigo
       .key(Self::get_key(key)?, Click)
@@ -236,7 +236,7 @@ impl Keyboard {
     Ok(())
   }
 
-  fn get_key(arg: JsUnknown) -> Result<EnigoKey, napi::Error> {
+  fn get_key(arg: Unknown) -> Result<EnigoKey, napi::Error> {
     match arg.get_type()? {
       ValueType::String => {
         let key: SpecialKey = SpecialKey::from_unknown(arg)?;
@@ -244,10 +244,10 @@ impl Keyboard {
         Ok(key.into())
       }
       ValueType::Object => {
-        let obj: JsObject = arg.try_into()?;
-        let kind: String = obj.get_named_property("kind")?;
+        let obj: Object = unsafe { arg.cast::<Object>() }?;
+        let kind: String = obj.get("kind")?.ok_or_else(|| napi::Error::from_reason("Property kind does not exist"))?;
         if kind == "Unicode" {
-          let value: String = obj.get_named_property("value")?;
+          let value: String = obj.get("value")?.ok_or_else(|| napi::Error::from_reason("Property value does not exist"))?;
           let mut chars = value.chars();
           let ch = chars
             .next()

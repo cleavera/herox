@@ -23,6 +23,7 @@ pub fn ease_out_cubic(t: f64) -> f64 {
 }
 
 #[napi(string_enum)]
+#[derive(Clone, Copy)]
 pub enum MouseButton {
   Left,
   Middle,

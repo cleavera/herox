@@ -1,5 +1,5 @@
 use image::{Rgba, RgbaImage};
-use napi::{bindgen_prelude::AsyncTask, Env, Error, JsNumber, Task};
+use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 
 #[napi(object)]
 pub struct Pixel {
@@ -149,7 +149,7 @@ impl AsyncGetPixelRgba {
 #[napi]
 impl Task for AsyncGetPixelRgba {
   type Output = u32;
-  type JsValue = JsNumber;
+  type JsValue = u32;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
     let rgba_pixel: &Rgba<u8> = self
@@ -160,8 +160,8 @@ impl Task for AsyncGetPixelRgba {
     Ok(rgba_into_rgba_number(rgba_pixel))
   }
 
-  fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
-    Ok(env.create_uint32(output as _)?)
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
+    Ok(output)
   }
 }
 
