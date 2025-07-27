@@ -2,7 +2,10 @@ use enigo::{
   Direction::{Click, Press, Release},
   Enigo, InputError, Key as EnigoKey, Keyboard as EnigoKeyboard, Settings,
 };
-use napi::{bindgen_prelude::{FromNapiValue, Object}, Error, Unknown, ValueType};
+use napi::{
+  bindgen_prelude::{FromNapiValue, Object},
+  Error, Unknown, ValueType,
+};
 
 #[napi(string_enum)]
 pub enum SpecialKey {
@@ -245,9 +248,13 @@ impl Keyboard {
       }
       ValueType::Object => {
         let obj: Object = unsafe { arg.cast::<Object>() }?;
-        let kind: String = obj.get("kind")?.ok_or_else(|| napi::Error::from_reason("Property kind does not exist"))?;
+        let kind: String = obj
+          .get("kind")?
+          .ok_or_else(|| napi::Error::from_reason("Property kind does not exist"))?;
         if kind == "Unicode" {
-          let value: String = obj.get("value")?.ok_or_else(|| napi::Error::from_reason("Property value does not exist"))?;
+          let value: String = obj
+            .get("value")?
+            .ok_or_else(|| napi::Error::from_reason("Property value does not exist"))?;
           let mut chars = value.chars();
           let ch = chars
             .next()

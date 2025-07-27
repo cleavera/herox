@@ -1,13 +1,14 @@
 #![cfg(target_os = "windows")]
 
 use windows::{
-  Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE},
+  Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, RECT, TRUE},
   Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
     GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY,
   },
   Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextW, IsWindowVisible,
+    EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextW, IsIconic, IsWindow,
+    IsWindowVisible,
   },
 };
 
@@ -145,6 +146,18 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
   let width = (rect.right - rect.left) as i32;
   let height = (rect.bottom - rect.top) as i32;
 
+  if unsafe { IsIconic(hwnd) }.as_bool() {
+    return Err(WindowError::ApiError(
+      "Window is minimized, cannot capture image".to_string(),
+    ));
+  }
+
+  if unsafe { IsWindow(hwnd) }.as_bool() {
+    return Err(WindowError::ApiError(
+      "Window handle is no longer valid".to_string(),
+    ));
+  }
+
   let hdc = unsafe { GetWindowDC(hwnd) };
   if hdc.0.is_null() {
     return Err(WindowError::ApiError(
@@ -157,9 +170,11 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
     unsafe {
       let _ = ReleaseDC(hwnd, hdc);
     };
-    return Err(WindowError::ApiError(
-      "Failed to create compatible DC".to_string(),
-    ));
+    let error_code = unsafe { GetLastError() };
+    return Err(WindowError::ApiError(format!(
+      "CreateCompatibleDC failed with error code {}, this may be a GDI resource leak",
+      error_code.0
+    )));
   }
 
   let mem_bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };

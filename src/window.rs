@@ -7,6 +7,12 @@ mod windows_backend;
 #[cfg(target_os = "windows")]
 use windows_backend::WindowsWindow;
 
+#[cfg(target_os = "linux")]
+mod x11_backend;
+#[cfg(target_os = "linux")]
+use x11_backend::X11Window;
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 mod unsupported_backend;
 
 #[derive(Debug)]
@@ -74,7 +80,11 @@ impl Window {
     {
       WindowsWindow::all_windows().map_err(|e| e.into())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+      X11Window::all_windows().map_err(|e| e.into())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
       unsupported_backend::UnsupportedOSWindow::all_windows().map_err(|e| e.into())
     }
