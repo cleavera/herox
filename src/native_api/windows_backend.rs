@@ -1,12 +1,13 @@
 #![cfg(target_os = "windows")]
 
-use windows::{
-  Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, RECT, TRUE},
-  Win32::Graphics::Gdi::{
+use windows::Win32::{
+  Foundation::{GetLastError, BOOL, HWND, LPARAM, RECT, TRUE},
+  Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
-    GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY,
+    GetWindowDC, ReleaseDC, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP,
+    HDC, SRCCOPY,
   },
-  Win32::UI::WindowsAndMessaging::{
+  UI::WindowsAndMessaging::{
     EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextW, IsIconic, IsWindow,
     IsWindowVisible,
   },
@@ -155,7 +156,11 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
               .ok();
           }
           Err(e) => {
-            response_sender.send(WindowsApiResponse::Error(WindowsApiError::CaptureWindowImage(e))).ok();
+            response_sender
+              .send(WindowsApiResponse::Error(
+                WindowsApiError::CaptureWindowImage(e),
+              ))
+              .ok();
           }
         }
       }
@@ -178,6 +183,90 @@ fn get_window_rect(hwnd: HWND) -> Result<RECT, WindowsApiGetWindowRectError> {
   }
 }
 
+pub struct WindowDeviceContext {
+  pub hwnd: HWND,
+  pub hdc: HDC,
+}
+
+impl WindowDeviceContext {
+  pub fn new(hwnd: HWND) -> Result<Self, u32> {
+    let hdc = unsafe { GetWindowDC(hwnd) };
+    let dc = Self { hwnd, hdc };
+
+    if hdc.0.is_null() {
+      return Err(get_error_code());
+    }
+
+    Ok(dc)
+  }
+
+  pub fn create_compatible_dc(&self) -> Result<CompatibleDeviceContext, u32> {
+    CompatibleDeviceContext::new(self.hdc)
+  }
+}
+
+impl Drop for WindowDeviceContext {
+  fn drop(&mut self) {
+    unsafe {
+      ReleaseDC(self.hwnd, self.hdc);
+    }
+  }
+}
+
+pub struct CompatibleDeviceContext {
+  pub hdc: HDC,
+}
+
+impl CompatibleDeviceContext {
+  pub fn new(hdc: HDC) -> Result<Self, u32> {
+    let mem_dc = unsafe { CreateCompatibleDC(hdc) };
+    let dc = Self { hdc: mem_dc };
+
+    if mem_dc.0.is_null() {
+      return Err(get_error_code());
+    }
+
+    Ok(dc)
+  }
+
+  pub fn create_bitmap(&self, width: i32, height: i32) -> Result<CompatibleBitmap, u32> {
+    CompatibleBitmap::new(self.hdc, width, height)
+  }
+}
+
+impl Drop for CompatibleDeviceContext {
+  fn drop(&mut self) {
+    unsafe {
+      let _ = DeleteDC(self.hdc);
+    }
+  }
+}
+
+pub struct CompatibleBitmap {
+  pub bitmap: HBITMAP,
+}
+
+impl CompatibleBitmap {
+  pub fn new(hdc: HDC, width: i32, height: i32) -> Result<Self, u32> {
+    let bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };
+    let bitmap = Self { bitmap };
+
+    if bitmap.bitmap.0.is_null() {
+      return Err(get_error_code());
+    }
+
+    Ok(bitmap)
+  }
+}
+
+impl Drop for CompatibleBitmap {
+  fn drop(&mut self) {
+    unsafe {
+      let _ = DeleteObject(self.bitmap);
+    }
+  }
+}
+
 fn capture_window_image_internal(
   hwnd: HWND,
 ) -> Result<image::RgbaImage, WindowsApiCaptureWindowImageError> {
@@ -190,45 +279,20 @@ fn capture_window_image_internal(
     return Err(WindowsApiCaptureWindowImageError::IsMinimized);
   }
 
-  if unsafe { IsWindow(hwnd) }.as_bool() {
+  if !unsafe { IsWindow(hwnd) }.as_bool() {
     return Err(WindowsApiCaptureWindowImageError::HandleNoLongerValid);
   }
 
-  let hdc = unsafe { GetWindowDC(hwnd) };
-  if hdc.0.is_null() {
-    return Err(WindowsApiCaptureWindowImageError::GetWindowDcError(
-      get_error_code(),
-    ));
-  }
+  let hdc = WindowDeviceContext::new(hwnd)
+    .map_err(|e| WindowsApiCaptureWindowImageError::GetWindowDcError(e))?;
+  let mem_dc = hdc
+    .create_compatible_dc()
+    .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleDcError(e))?;
+  let mem_bitmap = mem_dc
+    .create_bitmap(width, height)
+    .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(e))?;
 
-  let mem_dc = unsafe { CreateCompatibleDC(hdc) };
-  if mem_dc.0.is_null() {
-    unsafe {
-      let _ = ReleaseDC(hwnd, hdc);
-    };
-    return Err(WindowsApiCaptureWindowImageError::CreateCompatibleDcError(
-      get_error_code(),
-    ));
-  }
-
-  let mem_bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };
-  if mem_bitmap.0.is_null() {
-    unsafe {
-      let _ = DeleteDC(mem_dc);
-      let _ = ReleaseDC(hwnd, hdc);
-    };
-    return Err(WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(get_error_code()));
-  }
-
-  let old_bitmap = unsafe { SelectObject(mem_dc, mem_bitmap) };
-
-  if unsafe { BitBlt(mem_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY) }.is_err() {
-    unsafe {
-      let _ = SelectObject(mem_dc, old_bitmap);
-      let _ = DeleteObject(mem_bitmap);
-      let _ = DeleteDC(mem_dc);
-      let _ = ReleaseDC(hwnd, hdc);
-    };
+  if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
     return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
       get_error_code(),
     ));
@@ -255,8 +319,8 @@ fn capture_window_image_internal(
 
   let result = unsafe {
     GetDIBits(
-      hdc,
-      mem_bitmap,
+      hdc.hdc,
+      mem_bitmap.bitmap,
       0,
       height as u32,
       Some(buffer.as_mut_ptr() as *mut _),
