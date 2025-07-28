@@ -137,7 +137,7 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
           Err(e) => response_sender
             .send(WindowsApiResponse::Error(WindowsApiError::GetWindowRect(e)))
             .ok(),
-        }?
+        };
       }
       WindowsApiCommand::IsWindowFocused(handle) => {
         let hwnd = handle.as_hwnd();
@@ -206,7 +206,6 @@ fn capture_window_image_internal(
     unsafe {
       let _ = ReleaseDC(hwnd, hdc);
     };
-    let error_code = unsafe { GetLastError() };
     return Err(WindowsApiCaptureWindowImageError::CreateCompatibleDcError(
       get_error_code(),
     ));
@@ -303,11 +302,11 @@ pub fn send_command_to_api_thread(
   let sender = WINDOWS_API_SENDER.get().unwrap();
   sender
     .send((command, response_sender))
-    .map_err(|e| WindowsSendCommandToApiThreadError::Send)?;
+    .map_err(|_| WindowsSendCommandToApiThreadError::Send)?;
   Ok(
     response_receiver
       .recv()
-      .map_err(|e| WindowsSendCommandToApiThreadError::Receive)?,
+      .map_err(|_| WindowsSendCommandToApiThreadError::Receive)?,
   )
 }
 

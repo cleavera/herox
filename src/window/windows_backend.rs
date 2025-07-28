@@ -1,7 +1,7 @@
 #![cfg(target_os = "windows")]
 
 use crate::native_api::windows_backend::{
-  send_command_to_api_thread, WindowHandle, WindowsApiCommand, WindowsApiError, WindowsApiResponse, WindowsSendCommandToApiThreadError,
+  send_command_to_api_thread, WindowHandle, WindowsApiCommand, WindowsApiError, WindowsApiResponse, WindowsSendCommandToApiThreadError, WindowsApiGetWindowRectError, WindowsApiEnumerateWindowsError, WindowsApiCaptureWindowImageError
 };
 use crate::window::{NativeWindow, NativeWindowFactory, Window, WindowError};
 
@@ -26,9 +26,10 @@ impl Into<Window> for WindowsWindow {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowTitleError {
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowTitleError {
@@ -38,10 +39,11 @@ impl Into<WindowError> for WindowsNativeWindowTitleError {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowXError {
   GetRectError(WindowsApiGetWindowRectError),
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowXError {
@@ -51,10 +53,11 @@ impl Into<WindowError> for WindowsNativeWindowXError {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowYError {
   GetRectError(WindowsApiGetWindowRectError),
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowYError {
@@ -64,10 +67,11 @@ impl Into<WindowError> for WindowsNativeWindowYError {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowWidthError {
   GetRectError(WindowsApiGetWindowRectError),
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowWidthError {
@@ -77,10 +81,11 @@ impl Into<WindowError> for WindowsNativeWindowWidthError {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowHeightError {
   GetRectError(WindowsApiGetWindowRectError),
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowHeightError {
@@ -90,9 +95,10 @@ impl Into<WindowError> for WindowsNativeWindowHeightError {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowIsFocusedError {
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowIsFocusedError {
@@ -102,10 +108,11 @@ impl Into<WindowError> for WindowsNativeWindowIsFocusedError {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowCaptureImageError {
-  CaptureImageError(WindowsApiCaptureImageError),
+  CaptureImageError(WindowsApiCaptureWindowImageError),
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowCaptureImageError {
@@ -175,10 +182,11 @@ impl NativeWindow for WindowsWindow {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum WindowsNativeWindowAllWindowsError {
   EnumerateWindowsError(WindowsApiEnumerateWindowsError),
   UnexpectedResponse,
-  ApiError(SendCommandToApiThreadError),
+  ApiError(WindowsSendCommandToApiThreadError),
 }
 
 impl Into<WindowError> for WindowsNativeWindowAllWindowsError {
