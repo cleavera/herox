@@ -137,7 +137,7 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
           Err(e) => response_sender
             .send(WindowsApiResponse::Error(WindowsApiError::GetWindowRect(e)))
             .ok(),
-        }
+        }?
       }
       WindowsApiCommand::IsWindowFocused(handle) => {
         let hwnd = handle.as_hwnd();
@@ -155,7 +155,7 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
               .ok();
           }
           Err(e) => {
-            response_sender.send(WindowsApiResponse::Error(e)).ok();
+            response_sender.send(WindowsApiResponse::Error(WindowsApiError::CaptureWindowImage(e))).ok();
           }
         }
       }
@@ -196,7 +196,7 @@ fn capture_window_image_internal(
 
   let hdc = unsafe { GetWindowDC(hwnd) };
   if hdc.0.is_null() {
-    return Err(WindowsApiCaptureWindowImageError::GetWindowDCError(
+    return Err(WindowsApiCaptureWindowImageError::GetWindowDcError(
       get_error_code(),
     ));
   }
@@ -207,7 +207,7 @@ fn capture_window_image_internal(
       let _ = ReleaseDC(hwnd, hdc);
     };
     let error_code = unsafe { GetLastError() };
-    return Err(WindowsApiCaptureWindowImageError::CreateCompatibleDCError(
+    return Err(WindowsApiCaptureWindowImageError::CreateCompatibleDcError(
       get_error_code(),
     ));
   }
@@ -216,8 +216,6 @@ fn capture_window_image_internal(
   if mem_bitmap.0.is_null() {
     unsafe {
       let _ = DeleteDC(mem_dc);
-    };
-    unsafe {
       let _ = ReleaseDC(hwnd, hdc);
     };
     return Err(WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(get_error_code()));
