@@ -12,7 +12,6 @@ use windows::{
   },
 };
 
-use crate::window::WindowError;
 use core::ffi::c_void;
 use once_cell::sync::OnceCell;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -41,14 +40,51 @@ pub enum WindowsApiCommand {
   Shutdown,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum WindowsApiEnumerateWindowsError {
+  Generic(u32),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum WindowsApiGetWindowRectError {
+  Generic(u32),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum WindowsApiCaptureWindowImageError {
+  Generic(u32),
+  GetWindowRectError(WindowsApiGetWindowRectError),
+  IsMinimized,
+  HandleNoLongerValid,
+  GetWindowDcError(u32),
+  CreateCompatibleDcError(u32),
+  CreateCompatibleBitmapError(u32),
+  CopyBitmapError(u32),
+  DiBitsToBufferError(u32),
+  InvalidBitmap,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum WindowsApiError {
+  EnumerateWindows(WindowsApiEnumerateWindowsError),
+  GetWindowRect(WindowsApiGetWindowRectError),
+  CaptureWindowImage(WindowsApiCaptureWindowImageError),
+}
+
 pub enum WindowsApiResponse {
   WindowList(Vec<WindowHandle>),
   WindowTitle(String),
   WindowRect(RECT),
   WindowFocused(bool),
   WindowImage(image::RgbaImage),
-  Error(WindowError),
+  Error(WindowsApiError),
   Acknowledgement,
+}
+
+fn get_error_code() -> u32 {
+  let error_code = unsafe { GetLastError() };
+
+  error_code.0
 }
 
 fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<WindowsApiResponse>)>) {
@@ -64,9 +100,11 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
         };
         if result.is_err() {
           response_sender
-            .send(WindowsApiResponse::Error(WindowError::ApiError(
-              "EnumWindows failed".to_string(),
-            )))
+            .send(WindowsApiResponse::Error(
+              WindowsApiError::EnumerateWindows(WindowsApiEnumerateWindowsError::Generic(
+                get_error_code(),
+              )),
+            ))
             .ok();
         } else {
           response_sender
@@ -92,17 +130,13 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
       }
       WindowsApiCommand::GetWindowRect(handle) => {
         let hwnd = handle.as_hwnd();
-        let mut rect = RECT::default();
-        if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
-          response_sender
-            .send(WindowsApiResponse::Error(WindowError::ApiError(
-              "Failed to get window rect".to_string(),
-            )))
-            .ok();
-        } else {
-          response_sender
+        match get_window_rect(hwnd) {
+          Ok(rect) => response_sender
             .send(WindowsApiResponse::WindowRect(rect))
-            .ok();
+            .ok(),
+          Err(e) => response_sender
+            .send(WindowsApiResponse::Error(WindowsApiError::GetWindowRect(e)))
+            .ok(),
         }
       }
       WindowsApiCommand::IsWindowFocused(handle) => {
@@ -135,33 +169,35 @@ fn windows_api_thread_main(receiver: Receiver<(WindowsApiCommand, Sender<Windows
   }
 }
 
-fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowError> {
+fn get_window_rect(hwnd: HWND) -> Result<RECT, WindowsApiGetWindowRectError> {
   let mut rect = RECT::default();
   if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
-    return Err(WindowError::ApiError(
-      "Failed to get window rect".to_string(),
-    ));
+    return Err(WindowsApiGetWindowRectError::Generic(get_error_code()));
+  } else {
+    return Ok(rect);
   }
+}
 
+fn capture_window_image_internal(
+  hwnd: HWND,
+) -> Result<image::RgbaImage, WindowsApiCaptureWindowImageError> {
+  let rect =
+    get_window_rect(hwnd).map_err(|e| WindowsApiCaptureWindowImageError::GetWindowRectError(e))?;
   let width = (rect.right - rect.left) as i32;
   let height = (rect.bottom - rect.top) as i32;
 
   if unsafe { IsIconic(hwnd) }.as_bool() {
-    return Err(WindowError::ApiError(
-      "Window is minimized, cannot capture image".to_string(),
-    ));
+    return Err(WindowsApiCaptureWindowImageError::IsMinimized);
   }
 
   if unsafe { IsWindow(hwnd) }.as_bool() {
-    return Err(WindowError::ApiError(
-      "Window handle is no longer valid".to_string(),
-    ));
+    return Err(WindowsApiCaptureWindowImageError::HandleNoLongerValid);
   }
 
   let hdc = unsafe { GetWindowDC(hwnd) };
   if hdc.0.is_null() {
-    return Err(WindowError::ApiError(
-      "Failed to get device context".to_string(),
+    return Err(WindowsApiCaptureWindowImageError::GetWindowDCError(
+      get_error_code(),
     ));
   }
 
@@ -171,10 +207,9 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
       let _ = ReleaseDC(hwnd, hdc);
     };
     let error_code = unsafe { GetLastError() };
-    return Err(WindowError::ApiError(format!(
-      "CreateCompatibleDC failed with error code {}, this may be a GDI resource leak",
-      error_code.0
-    )));
+    return Err(WindowsApiCaptureWindowImageError::CreateCompatibleDCError(
+      get_error_code(),
+    ));
   }
 
   let mem_bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };
@@ -185,9 +220,7 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
     unsafe {
       let _ = ReleaseDC(hwnd, hdc);
     };
-    return Err(WindowError::ApiError(
-      "Failed to create compatible bitmap".to_string(),
-    ));
+    return Err(WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(get_error_code()));
   }
 
   let old_bitmap = unsafe { SelectObject(mem_dc, mem_bitmap) };
@@ -195,18 +228,12 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
   if unsafe { BitBlt(mem_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY) }.is_err() {
     unsafe {
       let _ = SelectObject(mem_dc, old_bitmap);
-    };
-    unsafe {
       let _ = DeleteObject(mem_bitmap);
-    };
-    unsafe {
       let _ = DeleteDC(mem_dc);
-    };
-    unsafe {
       let _ = ReleaseDC(hwnd, hdc);
     };
-    return Err(WindowError::ApiError(
-      "Failed to copy screen to bitmap".to_string(),
+    return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
+      get_error_code(),
     ));
   }
 
@@ -242,7 +269,9 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
   };
 
   if result == 0 {
-    return Err(WindowError::ApiError("Failed to get DIBits".to_string()));
+    return Err(WindowsApiCaptureWindowImageError::DiBitsToBufferError(
+      get_error_code(),
+    ));
   }
 
   for chunk in buffer.chunks_mut(4) {
@@ -250,16 +279,22 @@ fn capture_window_image_internal(hwnd: HWND) -> Result<image::RgbaImage, WindowE
   }
 
   image::RgbaImage::from_raw(width as u32, height as u32, buffer)
-    .ok_or_else(|| WindowError::InvalidBitmap)
+    .ok_or_else(|| WindowsApiCaptureWindowImageError::InvalidBitmap)
 }
 
 static WINDOWS_API_SENDER: OnceCell<Sender<(WindowsApiCommand, Sender<WindowsApiResponse>)>> =
   OnceCell::new();
 static INIT_WINDOWS_API_THREAD: Once = Once::new();
 
+#[derive(Clone, Copy, Debug)]
+pub enum WindowsSendCommandToApiThreadError {
+  Send,
+  Receive,
+}
+
 pub fn send_command_to_api_thread(
   command: WindowsApiCommand,
-) -> Result<WindowsApiResponse, WindowError> {
+) -> Result<WindowsApiResponse, WindowsSendCommandToApiThreadError> {
   INIT_WINDOWS_API_THREAD.call_once(|| {
     let (sender, receiver) = channel();
     WINDOWS_API_SENDER.set(sender).unwrap();
@@ -270,10 +305,12 @@ pub fn send_command_to_api_thread(
   let sender = WINDOWS_API_SENDER.get().unwrap();
   sender
     .send((command, response_sender))
-    .map_err(|e| WindowError::ApiError(format!("Failed to send command to API thread: {}", e)))?;
-  Ok(response_receiver.recv().map_err(|e| {
-    WindowError::ApiError(format!("Failed to receive response from API thread: {}", e))
-  })?)
+    .map_err(|e| WindowsSendCommandToApiThreadError::Send)?;
+  Ok(
+    response_receiver
+      .recv()
+      .map_err(|e| WindowsSendCommandToApiThreadError::Receive)?,
+  )
 }
 
 pub extern "system" fn enum_windows_proc_for_thread(hwnd: HWND, lparam: LPARAM) -> BOOL {

@@ -16,24 +16,17 @@ use x11_backend::X11Window;
 mod unsupported_backend;
 
 #[derive(Debug)]
-pub enum WindowError {
-  ApiError(String),
-  EmptyTitle,
-  InvalidBitmap,
-  UnsupportedPlatform,
+pub struct WindowError(String); 
+
+impl WindowError {
+    pub fn from_reason<T: Into<String>>(reason: T) -> WindowError {
+        WindowError(reason.into())
+    }
 }
 
 impl From<WindowError> for Error {
   fn from(value: WindowError) -> Error {
-    let message = match value {
-      WindowError::ApiError(s) => s,
-      WindowError::EmptyTitle => "Window title is empty".to_string(),
-      WindowError::InvalidBitmap => "Invalid bitmap".to_string(),
-      WindowError::UnsupportedPlatform => {
-        "This operation is not supported on the current platform".to_string()
-      }
-    };
-    Error::from_reason(message)
+    Error::from_reason(value.0)
   }
 }
 
@@ -78,15 +71,15 @@ impl Window {
   pub fn all() -> Result<Vec<Window>, Error> {
     #[cfg(target_os = "windows")]
     {
-      WindowsWindow::all_windows().map_err(|e| e.into())
+      Ok(WindowsWindow::all_windows()?)
     }
     #[cfg(target_os = "linux")]
     {
-      X11Window::all_windows().map_err(|e| e.into())
+      Ok(X11Window::all_windows()?)
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
-      unsupported_backend::UnsupportedOSWindow::all_windows().map_err(|e| e.into())
+      Ok(unsupported_backend::UnsupportedOSWindow::all_windows()?)
     }
   }
 
