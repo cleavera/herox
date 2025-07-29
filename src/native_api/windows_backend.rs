@@ -267,6 +267,24 @@ impl Drop for CompatibleBitmap {
   }
 }
 
+pub struct ScopedSelectedBitmap {
+    hdc: HDC,
+    old_bitmap: HBITMAP,
+}
+
+impl ScopedSelectedBitmap {
+    pub fn new(hdc: HDC, new_bitmap: HBITMAP) -> Self {
+        let old_bitmap = unsafe { SelectObject(hdc, new_bitmap) };
+        Self { hdc, old_bitmap }
+    }
+}
+
+impl Drop for ScopedSelectedBitmap {
+    fn drop(&mut self) {
+        unsafe { SelectObject(self.hdc, self.old_bitmap) };
+    }
+}
+
 fn capture_window_image_internal(
   hwnd: HWND,
 ) -> Result<image::RgbaImage, WindowsApiCaptureWindowImageError> {
@@ -291,6 +309,8 @@ fn capture_window_image_internal(
   let mem_bitmap = mem_dc
     .create_bitmap(width, height)
     .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(e))?;
+
+  let _selected_bitmap_guard = ScopedSelectedBitmap::new(mem_dc.hdc, mem_bitmap.bitmap);
 
   if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
     return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
