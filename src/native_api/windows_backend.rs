@@ -4,8 +4,8 @@ use windows::Win32::{
   Foundation::{GetLastError, BOOL, HWND, LPARAM, RECT, TRUE},
   Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
-    GetWindowDC, ReleaseDC, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP,
-    HDC, SRCCOPY,
+    GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP,
+    HDC, HGDIOBJ, SRCCOPY,
   },
   UI::WindowsAndMessaging::{
     EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextW, IsIconic, IsWindow,
@@ -268,21 +268,21 @@ impl Drop for CompatibleBitmap {
 }
 
 pub struct ScopedSelectedBitmap {
-    hdc: HDC,
-    old_bitmap: HBITMAP,
+  hdc: HDC,
+  old_bitmap: HGDIOBJ,
 }
 
 impl ScopedSelectedBitmap {
-    pub fn new(hdc: HDC, new_bitmap: HBITMAP) -> Self {
-        let old_bitmap = unsafe { SelectObject(hdc, new_bitmap) };
-        Self { hdc, old_bitmap }
-    }
+  pub fn new(hdc: HDC, new_bitmap: HBITMAP) -> Self {
+    let old_bitmap = unsafe { SelectObject(hdc, new_bitmap) };
+    Self { hdc, old_bitmap }
+  }
 }
 
 impl Drop for ScopedSelectedBitmap {
-    fn drop(&mut self) {
-        unsafe { SelectObject(self.hdc, self.old_bitmap) };
-    }
+  fn drop(&mut self) {
+    unsafe { SelectObject(self.hdc, self.old_bitmap) };
+  }
 }
 
 fn capture_window_image_internal(
