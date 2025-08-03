@@ -1,5 +1,6 @@
 use image::{Rgba, RgbaImage};
 use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
+use std::collections::HashMap;
 
 #[napi(object)]
 pub struct Pixel {
@@ -11,6 +12,12 @@ pub struct Pixel {
 #[napi(object)]
 pub struct Feature {
   pub pixels: Vec<Pixel>,
+}
+
+#[napi(object)]
+pub struct ColourFrequency {
+  pub rgba: u32,
+  pub count: u32,
 }
 
 #[napi]
@@ -37,7 +44,10 @@ impl Image {
 
   #[napi(ts_return_type = "Promise<Array<Pixel>>")]
   pub fn find_rgbas(&self, rgba_number: u32) -> AsyncTask<AsyncFindRgbas> {
-    AsyncTask::new(AsyncFindRgbas::new(rgba_number, self.rgba_image.clone()))
+    AsyncTask::new(AsyncFindRgbas::new(
+      rgba_number,
+      self.rgba_image.clone(),
+    ))
   }
 
   #[napi(ts_return_type = "Promise<Array<Pixel>>")]
@@ -83,6 +93,23 @@ impl Image {
     end_y: u32,
   ) -> AsyncTask<AsyncGetFeature> {
     AsyncTask::new(AsyncGetFeature::new(
+      start_x,
+      start_y,
+      end_x,
+      end_y,
+      self.rgba_image.clone(),
+    ))
+  }
+
+  #[napi(ts_return_type = "Promise<Array<ColourFrequency>>")]
+  pub fn get_colour_frequencies(
+    &self,
+    start_x: u32,
+    start_y: u32,
+    end_x: u32,
+    end_y: u32,
+  ) -> AsyncTask<AsyncGetColourFrequencies> {
+    AsyncTask::new(AsyncGetColourFrequencies::new(
       start_x,
       start_y,
       end_x,
@@ -484,6 +511,69 @@ impl Task for AsyncGetFeature {
     Ok(Feature {
       pixels: pixels_in_region,
     })
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
+    Ok(output)
+  }
+}
+
+pub struct AsyncGetColourFrequencies {
+  start_x: u32,
+  start_y: u32,
+  end_x: u32,
+  end_y: u32,
+  rgba_image: RgbaImage,
+}
+
+impl AsyncGetColourFrequencies {
+  pub fn new(start_x: u32, start_y: u32, end_x: u32, end_y: u32, rgba_image: RgbaImage) -> Self {
+    Self {
+      start_x,
+      start_y,
+      end_x,
+      end_y,
+      rgba_image,
+    }
+  }
+}
+
+#[napi]
+impl Task for AsyncGetColourFrequencies {
+  type Output = Vec<ColourFrequency>;
+  type JsValue = Vec<ColourFrequency>;
+
+  fn compute(&mut self) -> Result<Self::Output, Error> {
+    let min_x = self.start_x.min(self.end_x);
+    let max_x = self.start_x.max(self.end_x);
+    let min_y = self.start_y.min(self.end_y);
+    let max_y = self.start_y.max(self.end_y);
+
+    let width = self.rgba_image.width();
+    let height = self.rgba_image.height();
+
+    if min_x >= width || min_y >= height || max_x >= width || max_y >= height {
+      return Err(Error::from_reason(
+        "Coordinates are outside image boundaries.",
+      ));
+    }
+
+    let mut colour_counts: HashMap<u32, u32> = HashMap::new();
+
+    for y in min_y..=max_y {
+      for x in min_x..=max_x {
+        let rgba_raw = self.rgba_image.get_pixel(x, y);
+        let rgba_u32 = rgba_into_rgba_number(rgba_raw);
+        *colour_counts.entry(rgba_u32).or_insert(0) += 1;
+      }
+    }
+
+    let frequencies = colour_counts
+      .into_iter()
+      .map(|(rgba, count)| ColourFrequency { rgba, count })
+      .collect();
+
+    Ok(frequencies)
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {

@@ -58,3 +58,32 @@ test('screen capture', async () => {
   strictEqual(matchingPixels.some(p => p.x === target.x && p.y === target.y), true);
 });
 
+test('get colour frequencies', async () => {
+  const window = Window.all().find(w => w.isFocused());
+  if (!window) {
+    return;
+  }
+
+  const image = await window!.captureImage();
+
+  const startX = 0;
+  const startY = 0;
+  const endX = 10;
+  const endY = 10;
+
+  const feature = await image.getFeature(startX, startY, endX, endY);
+  const expectedFrequencies: Record<number, number> = {};
+  for (const pixel of feature.pixels) {
+    expectedFrequencies[pixel.rgba] = (expectedFrequencies[pixel.rgba] || 0) + 1;
+  }
+
+  const actualFrequencies = await image.getColourFrequencies(startX, startY, endX, endY);
+
+  for (const { rgba, count } of actualFrequencies) {
+    strictEqual(count, expectedFrequencies[rgba]);
+    delete expectedFrequencies[rgba];
+  }
+
+  strictEqual(Object.keys(expectedFrequencies).length, 0);
+});
+
