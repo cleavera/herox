@@ -5,7 +5,7 @@ use windows::Win32::{
   Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
     GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP,
-    HDC, HGDIOBJ, SRCCOPY,
+    HDC, SRCCOPY,
   },
   UI::WindowsAndMessaging::{
     EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextW, IsIconic, IsWindow,
@@ -203,6 +203,10 @@ impl WindowDeviceContext {
   pub fn create_compatible_dc(&self) -> Result<CompatibleDeviceContext, u32> {
     CompatibleDeviceContext::new(self.hdc)
   }
+
+  pub fn create_bitmap(&self, width: i32, height: i32) -> Result<CompatibleBitmap, u32> {
+    CompatibleBitmap::new(self.hdc, width, height)
+  }
 }
 
 impl Drop for WindowDeviceContext {
@@ -228,10 +232,6 @@ impl CompatibleDeviceContext {
 
     Ok(dc)
   }
-
-  pub fn create_bitmap(&self, width: i32, height: i32) -> Result<CompatibleBitmap, u32> {
-    CompatibleBitmap::new(self.hdc, width, height)
-  }
 }
 
 impl Drop for CompatibleDeviceContext {
@@ -249,13 +249,13 @@ pub struct CompatibleBitmap {
 impl CompatibleBitmap {
   pub fn new(hdc: HDC, width: i32, height: i32) -> Result<Self, u32> {
     let bitmap = unsafe { CreateCompatibleBitmap(hdc, width, height) };
-    let bitmap = Self { bitmap };
+    let bmp = Self { bitmap };
 
-    if bitmap.bitmap.0.is_null() {
+    if bitmap.0.is_null() {
       return Err(get_error_code());
     }
 
-    Ok(bitmap)
+    Ok(bmp)
   }
 }
 
@@ -264,24 +264,6 @@ impl Drop for CompatibleBitmap {
     unsafe {
       let _ = DeleteObject(self.bitmap);
     }
-  }
-}
-
-pub struct ScopedSelectedBitmap {
-  hdc: HDC,
-  old_bitmap: HGDIOBJ,
-}
-
-impl ScopedSelectedBitmap {
-  pub fn new(hdc: HDC, new_bitmap: HBITMAP) -> Self {
-    let old_bitmap = unsafe { SelectObject(hdc, new_bitmap) };
-    Self { hdc, old_bitmap }
-  }
-}
-
-impl Drop for ScopedSelectedBitmap {
-  fn drop(&mut self) {
-    unsafe { SelectObject(self.hdc, self.old_bitmap) };
   }
 }
 
@@ -306,13 +288,17 @@ fn capture_window_image_internal(
   let mem_dc = hdc
     .create_compatible_dc()
     .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleDcError(e))?;
-  let mem_bitmap = mem_dc
+  let mem_bitmap = hdc
     .create_bitmap(width, height)
     .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(e))?;
 
-  let _selected_bitmap_guard = ScopedSelectedBitmap::new(mem_dc.hdc, mem_bitmap.bitmap);
+  let old_bitmap = unsafe { SelectObject(mem_dc.hdc, mem_bitmap.bitmap) };
 
   if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
+    unsafe {
+      let _ = SelectObject(mem_dc.hdc, old_bitmap);
+    }
+
     return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
       get_error_code(),
     ));
@@ -339,7 +325,7 @@ fn capture_window_image_internal(
 
   let result = unsafe {
     GetDIBits(
-      hdc.hdc,
+      mem_dc.hdc,
       mem_bitmap.bitmap,
       0,
       height as u32,
@@ -350,6 +336,10 @@ fn capture_window_image_internal(
   };
 
   if result == 0 {
+    unsafe {
+      let _ = SelectObject(mem_dc.hdc, old_bitmap);
+    }
+
     return Err(WindowsApiCaptureWindowImageError::DiBitsToBufferError(
       get_error_code(),
     ));
@@ -357,6 +347,10 @@ fn capture_window_image_internal(
 
   for chunk in buffer.chunks_mut(4) {
     chunk.swap(0, 2);
+  }
+
+  unsafe {
+    let _ = SelectObject(mem_dc.hdc, old_bitmap);
   }
 
   image::RgbaImage::from_raw(width as u32, height as u32, buffer)

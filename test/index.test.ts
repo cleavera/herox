@@ -50,7 +50,7 @@ test('key press', async () => {
 test('screen capture', async () => {
   const window = Window.all().find(w => w.isFocused());
   const image = await window!.captureImage();
-  const target = { x: image.width / 2, y: image.height / 2 };
+  const target = { x: Math.ceil(image.width / 2), y: Math.ceil(image.height / 2) };
 
   const pixel = await image.getPixelRgba(target.x, target.y);
   const matchingPixels = await image.findRgbas(pixel);
