@@ -1,9 +1,13 @@
 #![cfg(target_os = "windows")]
 
-use crate::global_listener::{GlobalInputAction, GlobalInputActionType};
+use crate::global_listener::GlobalInputAction;
+use crate::keyboard::{unicode, SpecialKey, UnicodeKey};
 use once_cell::sync::OnceCell;
 use std::sync::mpsc::{Sender, SyncSender};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyboardState, MapVirtualKeyW, ToUnicode, MAP_VIRTUAL_KEY_TYPE
+};
 use windows::Win32::UI::WindowsAndMessaging::{
   CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
   KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
@@ -53,15 +57,69 @@ extern "system" fn low_level_keyboard_proc(
   if n_code >= 0 {
     let w_param_u = w_param.0 as u32;
     if w_param_u == WM_KEYDOWN || w_param_u == WM_SYSKEYDOWN {
-      if let Some(tx) = ACTION_TX.get() {
-        let kbd_ll_hook_struct = unsafe { *(l_param.0 as *const KBDLLHOOKSTRUCT) };
-        let _ = tx.send(GlobalInputAction {
-          action_type: GlobalInputActionType::Keyboard,
-          virtual_key_code: kbd_ll_hook_struct.vkCode,
-        });
-      }
+      let kbd_ll_hook_struct = unsafe { *(l_param.0 as *const KBDLLHOOKSTRUCT) };
+
+      handle_keydown(kbd_ll_hook_struct.vkCode);
     }
   }
 
   unsafe { CallNextHookEx(HHOOK(std::ptr::null_mut()), n_code, w_param, l_param) }
+}
+
+pub fn handle_keydown(key_code: u32) {
+  if let Some(tx) = ACTION_TX.get() {
+    let _ = tx.send(key_code.into());
+  }
+}
+
+impl From<u32> for GlobalInputAction {
+  fn from(value: u32) -> Self {
+    if let Ok(result) = SpecialKey::try_from(value) {
+      return GlobalInputAction::SpecialKey(result);
+    }
+
+    if let Ok(result) = UnicodeKey::try_from(value) {
+      return GlobalInputAction::UnicodeKey(result);
+    }
+
+    GlobalInputAction::Raw(value)
+  }
+}
+
+impl TryFrom<u32> for SpecialKey {
+  type Error = ();
+
+  fn try_from(value: u32) -> Result<Self, Self::Error> {
+    match value {
+      0x08 => Ok(SpecialKey::Backspace),
+      0x09 => Ok(SpecialKey::Tab),
+      0x13 => Ok(SpecialKey::Pause),
+      0x1B => Ok(SpecialKey::Escape),
+      0x20 => Ok(SpecialKey::Space),
+      0x21 => Ok(SpecialKey::PageUp),
+      0x22 => Ok(SpecialKey::PageDown),
+      0x23 => Ok(SpecialKey::End),
+      0x24 => Ok(SpecialKey::Home),
+      0x2D => Ok(SpecialKey::Insert),
+      _ => Err(()),
+    }
+  }
+}
+
+impl TryFrom<u32> for UnicodeKey {
+  type Error = ();
+
+  fn try_from(value: u32) -> Result<Self, Self::Error> {
+    let mut keyboard_state: [u8; 256] = [0; 256];
+    unsafe { GetKeyboardState(&mut keyboard_state).unwrap() };
+    let mut buffer: [u16; 2] = [0; 2];
+    let scan_code = unsafe { MapVirtualKeyW(value, MAP_VIRTUAL_KEY_TYPE(0)) };
+
+    let chars_copied = unsafe { ToUnicode(value, scan_code, Some(&keyboard_state), &mut buffer, 0) };
+    if chars_copied == 0 {
+      return Err(());
+    }
+
+    Ok(unicode(char::from_u32(buffer[0] as u32).ok_or(())?.into()))
+  }
 }

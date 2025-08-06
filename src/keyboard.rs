@@ -8,6 +8,7 @@ use napi::{
 };
 
 #[napi(string_enum)]
+#[derive(Clone, Copy, Debug)]
 pub enum SpecialKey {
   Add,
   Alt,
@@ -87,6 +88,7 @@ pub enum Key {
 }
 
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct UnicodeKey {
   pub kind: String,
   pub value: String,
