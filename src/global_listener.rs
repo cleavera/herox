@@ -10,8 +10,15 @@ pub mod windows_backend;
 
 #[napi]
 #[derive(Clone, Copy, Debug)]
-pub enum GlobalInputAction {
-  Keyboard,
+pub enum GlobalInputActionType {
+    Keyboard,
+}
+
+#[napi(object)]
+#[derive(Clone, Copy, Debug)]
+pub struct GlobalInputAction {
+    pub action_type: GlobalInputActionType,
+    pub virtual_key_code: u32,
 }
 
 type Subscriber = ThreadsafeFunction<GlobalInputAction>;
