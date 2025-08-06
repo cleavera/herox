@@ -5,20 +5,17 @@ use std::sync::mpsc::{channel, sync_channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
+use crate::keyboard::{SpecialKey, UnicodeKey};
+
 pub mod unsupported_backend;
 pub mod windows_backend;
 
 #[napi]
-#[derive(Clone, Copy, Debug)]
-pub enum GlobalInputActionType {
-    Keyboard,
-}
-
-#[napi(object)]
-#[derive(Clone, Copy, Debug)]
-pub struct GlobalInputAction {
-    pub action_type: GlobalInputActionType,
-    pub virtual_key_code: u32,
+#[derive(Clone, Debug)]
+pub enum GlobalInputAction {
+    Raw(u32),
+    UnicodeKey(UnicodeKey),
+    SpecialKey(SpecialKey),
 }
 
 type Subscriber = ThreadsafeFunction<GlobalInputAction>;
@@ -49,7 +46,7 @@ impl ListenerState {
   fn broadcast(&self, action: GlobalInputAction) {
     let subs_guard = self.subscribers.lock().unwrap();
     for sub in subs_guard.values() {
-      sub.call(Ok(action), ThreadsafeFunctionCallMode::Blocking);
+      sub.call(Ok(action.clone().into()), ThreadsafeFunctionCallMode::Blocking);
     }
   }
 }
