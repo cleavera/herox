@@ -98,9 +98,7 @@ impl GlobalListener {
   pub fn subscribe<'a>(
     &'a self,
     env: &'a Env,
-    #[napi(ts_arg_type = "(action: GlobalInputAction) => void")] subscriber: ThreadsafeFunction<
-      GlobalInputAction,
-    >,
+    subscriber: ThreadsafeFunction<GlobalInputAction,>,
   ) -> Result<Function<'a, (), ()>> {
     let id = self.state.add_subscriber(subscriber);
     let state_clone = self.state.clone();
