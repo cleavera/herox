@@ -6,7 +6,7 @@ use std::sync::mpsc::{Sender, SyncSender};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
   CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
-  KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+  MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
 };
 
 static ACTION_TX: OnceCell<Sender<GlobalInputAction>> = OnceCell::new();
@@ -54,10 +54,10 @@ extern "system" fn low_level_keyboard_proc(
     let w_param_u = w_param.0 as u32;
     if w_param_u == WM_KEYDOWN || w_param_u == WM_SYSKEYDOWN {
       if let Some(tx) = ACTION_TX.get() {
-        let _ = tx.send(GlobalInputAction::keyboard);
+        let _ = tx.send(GlobalInputAction::Keyboard);
       }
     }
   }
 
-  unsafe { CallNextHookEx(HHOOK(0), n_code, w_param, l_param) }
+  unsafe { CallNextHookEx(HHOOK(std::ptr::null_mut()), n_code, w_param, l_param) }
 }

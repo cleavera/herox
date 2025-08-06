@@ -3,9 +3,7 @@
 use windows::Win32::{
   Foundation::{GetLastError, BOOL, HWND, LPARAM, RECT, TRUE},
   Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
-    GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP,
-    HDC, SRCCOPY,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ, SRCCOPY
   },
   UI::WindowsAndMessaging::{
     EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextW, IsIconic, IsWindow,
@@ -269,7 +267,7 @@ impl Drop for CompatibleBitmap {
 
 struct SelectedBitmap<'a> {
     hdc: HDC,
-    old_bitmap: HBITMAP,
+    old_bitmap: HGDIOBJ,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
