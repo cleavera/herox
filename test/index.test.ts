@@ -1,6 +1,6 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { Keyboard, Mouse, Position, SpecialKey, unicode, Window } from '../index.js';
+import { GlobalListener, Keyboard, Mouse, Position, SpecialKey, unicode, Window } from '../index.js';
 
 test('mouse move', async () => {
   const mouse = new Mouse();
@@ -42,9 +42,23 @@ test('multiple mouse tasks done simultaneously', async() => {
 
 test('key press', async () => {
   const keyboard = new Keyboard();
+  const listener = new GlobalListener();
+
+  const pressPromise = new Promise<void>(resolve => {
+    const unsubscribe = listener.subscribe(action => {
+      // In the future, we can assert the action details.
+      // For now, just receiving any event is enough.
+      unsubscribe();
+      resolve();
+    });
+  });
 
   keyboard.keyPress(unicode('a'));
   keyboard.keyPress(SpecialKey.Backspace);
+
+  await pressPromise;
+
+  listener.close();
 });
 
 test('screen capture', async () => {
