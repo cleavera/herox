@@ -81,22 +81,16 @@ impl GlobalListener {
     }));
 
     match init_rx.recv() {
-      Ok(Ok(())) => {
-        Ok(Self {
-          state,
-          action_tx: Some(action_tx),
-          _os_listener_handle,
-          _dispatcher_handle,
-        })
-      }
-      Ok(Err(err_msg)) => {
-        Err(Error::from_reason(err_msg))
-      }
-      Err(_) => {
-        Err(Error::from_reason(
-          "The global listener thread panicked during initialization.",
-        ))
-      }
+      Ok(Ok(())) => Ok(Self {
+        state,
+        action_tx: Some(action_tx),
+        _os_listener_handle,
+        _dispatcher_handle,
+      }),
+      Ok(Err(err_msg)) => Err(Error::from_reason(err_msg)),
+      Err(_) => Err(Error::from_reason(
+        "The global listener thread panicked during initialization.",
+      )),
     }
   }
 
