@@ -1,12 +1,12 @@
 #![cfg(target_os = "windows")]
 
-use crate::global_listener::GlobalInputAction;
+use crate::global_listener::{GlobalInputAction, GlobalInputActionType};
 use once_cell::sync::OnceCell;
 use std::sync::mpsc::{Sender, SyncSender};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
   CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
-  MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+  KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
 };
 
 static ACTION_TX: OnceCell<Sender<GlobalInputAction>> = OnceCell::new();
@@ -54,7 +54,11 @@ extern "system" fn low_level_keyboard_proc(
     let w_param_u = w_param.0 as u32;
     if w_param_u == WM_KEYDOWN || w_param_u == WM_SYSKEYDOWN {
       if let Some(tx) = ACTION_TX.get() {
-        let _ = tx.send(GlobalInputAction::Keyboard);
+        let kbd_ll_hook_struct = unsafe { *(l_param.0 as *const KBDLLHOOKSTRUCT) };
+        let _ = tx.send(GlobalInputAction {
+          action_type: GlobalInputActionType::Keyboard,
+          virtual_key_code: kbd_ll_hook_struct.vkCode,
+        });
       }
     }
   }
