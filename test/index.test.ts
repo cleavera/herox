@@ -1,5 +1,6 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
+import type { GlobalInputAction } from '../index.js';
 import { GlobalListener, Keyboard, Mouse, Position, SpecialKey, unicode, Window } from '../index.js';
 
 test('mouse move', async () => {
@@ -44,19 +45,29 @@ test('key press', async () => {
   const keyboard = new Keyboard();
   const listener = new GlobalListener();
 
-  const pressPromise = new Promise<void>(resolve => {
-    const unsubscribe = listener.subscribe(action => {
-      // In the future, we can assert the action details.
-      // For now, just receiving any event is enough.
+  const pressPromiseA = new Promise<GlobalInputAction>(resolve => {
+    const unsubscribe = listener.subscribe((_err, action) => {
       unsubscribe();
-      resolve();
+      resolve(action);
     });
   });
 
   keyboard.keyPress(unicode('a'));
-  keyboard.keyPress(SpecialKey.Backspace);
+  const pressAResult = await pressPromiseA;
+  strictEqual(pressAResult.type, 'UnicodeKey');
+  strictEqual((pressAResult as any).field0.value, 'a');
 
-  await pressPromise;
+  const pressPromiseBackspace = new Promise<GlobalInputAction>(resolve => {
+    const unsubscribe = listener.subscribe((_err, action) => {
+      unsubscribe();
+      resolve(action);
+    });
+  });
+
+  keyboard.keyPress(SpecialKey.Backspace);
+  const pressBackspaceResult = await pressPromiseBackspace;
+  strictEqual(pressBackspaceResult.type, 'SpecialKey');
+  strictEqual((pressBackspaceResult as any).field0, SpecialKey.Backspace);
 
   listener.close();
 });
