@@ -131,6 +131,11 @@ impl Image {
       self.rgba_image.clone(),
     ))
   }
+
+  #[napi(js_name = "finalize")]
+  pub fn finalize(&mut self, _env: Env) -> Result<(), Error> {
+    Ok(())
+  }
 }
 
 impl From<RgbaImage> for Image {
