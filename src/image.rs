@@ -1,6 +1,9 @@
 use image::{Rgba, RgbaImage};
 use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static IMAGE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[napi(object)]
 pub struct Pixel {
@@ -121,12 +124,24 @@ impl Image {
 
 impl From<RgbaImage> for Image {
   fn from(value: RgbaImage) -> Self {
+      IMAGE_COUNT.fetch_add(1, Ordering::SeqCst);
+
+      if IMAGE_COUNT.load(Ordering::SeqCst) > 20 {
+        panic!("Too many images");
+      }
+
     Image {
       width: value.width(),
       height: value.height(),
       rgba_image: value,
     }
   }
+}
+
+impl Drop for Image {
+    fn drop(&mut self) {
+        IMAGE_COUNT.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 pub fn rgba_into_rgba_number(rgba: &Rgba<u8>) -> u32 {
