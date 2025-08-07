@@ -340,7 +340,7 @@ fn capture_window_image_internal(
 
   let result = unsafe {
     GetDIBits(
-      hdc,
+      mem_dc,
       mem_bitmap,
       0,
       height as u32,
