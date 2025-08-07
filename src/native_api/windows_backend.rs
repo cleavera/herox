@@ -265,30 +265,7 @@ impl Drop for CompatibleBitmap {
   }
 }
 
-struct SelectedBitmap<'a> {
-    hdc: HDC,
-    old_bitmap: HGDIOBJ,
-    _marker: std::marker::PhantomData<&'a ()>,
-}
 
-impl<'a> SelectedBitmap<'a> {
-    fn new(hdc: HDC, new_bitmap: HBITMAP) -> Self {
-        let old_bitmap = unsafe { SelectObject(hdc, new_bitmap) };
-        Self {
-            hdc,
-            old_bitmap,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a> Drop for SelectedBitmap<'a> {
-    fn drop(&mut self) {
-        unsafe {
-            SelectObject(self.hdc, self.old_bitmap);
-        }
-    }
-}
 
 fn capture_window_image_internal(
   hwnd: HWND,
@@ -315,15 +292,17 @@ fn capture_window_image_internal(
     .create_bitmap(width, height)
     .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(e))?;
 
-  {
-    let _selected_bitmap = SelectedBitmap::new(mem_dc.hdc, mem_bitmap.bitmap);
+  let old_bitmap = unsafe { SelectObject(mem_dc.hdc, mem_bitmap.bitmap) };
 
-    if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
-      return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
-        get_error_code(),
-      ));
-    }
+  if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
+    let error_code = get_error_code();
+    unsafe { SelectObject(mem_dc.hdc, old_bitmap) };
+    return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
+      error_code,
+    ));
   }
+
+  unsafe { SelectObject(mem_dc.hdc, old_bitmap) };
 
   let mut bmi = BITMAPINFO {
     bmiHeader: BITMAPINFOHEADER {
@@ -346,7 +325,7 @@ fn capture_window_image_internal(
 
   let result = unsafe {
     GetDIBits(
-      hdc.hdc,
+      mem_dc.hdc,
       mem_bitmap.bitmap,
       0,
       height as u32,
