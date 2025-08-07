@@ -317,12 +317,14 @@ fn capture_window_image_internal(
     .create_bitmap(width, height)
     .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(e))?;
 
-  let _selected_bitmap = SelectedBitmap::new(mem_dc.hdc, mem_bitmap.bitmap);
+  {
+    let _selected_bitmap = SelectedBitmap::new(mem_dc.hdc, mem_bitmap.bitmap);
 
-  if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
-    return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
-      get_error_code(),
-    ));
+    if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
+      return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
+        get_error_code(),
+      ));
+    }
   }
 
   let mut bmi = BITMAPINFO {
@@ -346,7 +348,7 @@ fn capture_window_image_internal(
 
   let result = unsafe {
     GetDIBits(
-      mem_dc.hdc,
+      hdc.hdc,
       mem_bitmap.bitmap,
       0,
       height as u32,
