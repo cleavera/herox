@@ -288,15 +288,18 @@ fn capture_window_image_internal(
   let mem_dc = hdc
     .create_compatible_dc()
     .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleDcError(e))?;
-  let mem_bitmap = hdc
+  let mem_bitmap = std::mem::ManuallyDrop::new(hdc
     .create_bitmap(width, height)
-    .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(e))?;
+    .map_err(|e| WindowsApiCaptureWindowImageError::CreateCompatibleBitmapError(e))?);
 
   let old_bitmap = unsafe { SelectObject(mem_dc.hdc, mem_bitmap.bitmap) };
 
   if unsafe { BitBlt(mem_dc.hdc, 0, 0, width, height, hdc.hdc, 0, 0, SRCCOPY) }.is_err() {
     let error_code = get_error_code();
-    unsafe { SelectObject(mem_dc.hdc, old_bitmap) };
+    unsafe { 
+      SelectObject(mem_dc.hdc, old_bitmap);
+      DeleteObject(mem_bitmap.bitmap);
+    };
     return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(
       error_code,
     ));
@@ -334,6 +337,8 @@ fn capture_window_image_internal(
       DIB_RGB_COLORS,
     )
   };
+
+  unsafe { DeleteObject(mem_bitmap.bitmap) };
 
   if result == 0 {
     return Err(WindowsApiCaptureWindowImageError::DiBitsToBufferError(
