@@ -316,6 +316,9 @@ fn capture_window_image_internal(
     return Err(WindowsApiCaptureWindowImageError::CopyBitmapError(error_code));
   }
 
+  // Deselect the bitmap from the memory DC before calling GetDIBits.
+  unsafe { SelectObject(mem_dc, old_bitmap) };
+
   let mut bmi = BITMAPINFO {
     bmiHeader: BITMAPINFOHEADER {
       biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
@@ -348,7 +351,6 @@ fn capture_window_image_internal(
   };
 
   unsafe {
-    SelectObject(mem_dc, old_bitmap);
     DeleteObject(mem_bitmap);
     DeleteDC(mem_dc);
     ReleaseDC(hwnd, hdc);
