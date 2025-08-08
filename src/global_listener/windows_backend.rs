@@ -1,16 +1,15 @@
 #![cfg(target_os = "windows")]
 
-use crate::global_listener::GlobalInputAction;
+use crate::global_listener::{GlobalInputAction, GlobalInputActionType};
 use crate::keyboard::{unicode, SpecialKey, UnicodeKey};
 use once_cell::sync::OnceCell;
 use std::sync::mpsc::{Sender, SyncSender};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyboardState, MapVirtualKeyW, ToUnicode, MAP_VIRTUAL_KEY_TYPE
+  GetKeyboardState, MapVirtualKeyW, ToUnicode, MAP_VIRTUAL_KEY_TYPE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-  CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
-  KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+  CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP
 };
 
 static ACTION_TX: OnceCell<Sender<GlobalInputAction>> = OnceCell::new();
@@ -56,10 +55,14 @@ extern "system" fn low_level_keyboard_proc(
 ) -> LRESULT {
   if n_code >= 0 {
     let w_param_u = w_param.0 as u32;
-    if w_param_u == WM_KEYDOWN || w_param_u == WM_SYSKEYDOWN {
-      let kbd_ll_hook_struct = unsafe { *(l_param.0 as *const KBDLLHOOKSTRUCT) };
+    let kbd_ll_hook_struct = unsafe { *(l_param.0 as *const KBDLLHOOKSTRUCT) };
 
+    if w_param_u == WM_KEYDOWN || w_param_u == WM_SYSKEYDOWN {
       handle_keydown(kbd_ll_hook_struct.vkCode);
+    }
+
+    if w_param_u == WM_KEYUP || w_param_u == WM_SYSKEYUP {
+      handle_keyup(kbd_ll_hook_struct.vkCode);
     }
   }
 
@@ -68,21 +71,31 @@ extern "system" fn low_level_keyboard_proc(
 
 pub fn handle_keydown(key_code: u32) {
   if let Some(tx) = ACTION_TX.get() {
-    let _ = tx.send(key_code.into());
+    let _ = tx.send(GlobalInputAction::KeyDown {
+      value: key_code.into(),
+    });
   }
 }
 
-impl From<u32> for GlobalInputAction {
+pub fn handle_keyup(key_code: u32) {
+  if let Some(tx) = ACTION_TX.get() {
+    let _ = tx.send(GlobalInputAction::KeyUp {
+      value: key_code.into(),
+    });
+  }
+}
+
+impl From<u32> for GlobalInputActionType {
   fn from(value: u32) -> Self {
     if let Ok(result) = SpecialKey::try_from(value) {
-      return GlobalInputAction::SpecialKey(result);
+      return GlobalInputActionType::SpecialKey { key: result };
     }
 
     if let Ok(result) = UnicodeKey::try_from(value) {
-      return GlobalInputAction::UnicodeKey(result);
+      return GlobalInputActionType::UnicodeKey { key: result };
     }
 
-    GlobalInputAction::Raw(value)
+    GlobalInputActionType::Raw { keycode: value }
   }
 }
 
@@ -115,7 +128,8 @@ impl TryFrom<u32> for UnicodeKey {
     let mut buffer: [u16; 2] = [0; 2];
     let scan_code = unsafe { MapVirtualKeyW(value, MAP_VIRTUAL_KEY_TYPE(0)) };
 
-    let chars_copied = unsafe { ToUnicode(value, scan_code, Some(&keyboard_state), &mut buffer, 0) };
+    let chars_copied =
+      unsafe { ToUnicode(value, scan_code, Some(&keyboard_state), &mut buffer, 0) };
     if chars_copied == 0 {
       return Err(());
     }

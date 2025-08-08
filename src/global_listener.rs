@@ -13,9 +13,16 @@ pub mod windows_backend;
 #[napi]
 #[derive(Clone, Debug)]
 pub enum GlobalInputAction {
-    Raw(u32),
-    UnicodeKey(UnicodeKey),
-    SpecialKey(SpecialKey),
+    KeyUp { value: GlobalInputActionType },
+    KeyDown { value: GlobalInputActionType },
+}
+
+#[napi]
+#[derive(Clone, Debug)]
+pub enum GlobalInputActionType {
+    Raw{ keycode: u32 },
+    UnicodeKey{ key: UnicodeKey },
+    SpecialKey{ key: SpecialKey },
 }
 
 type Subscriber = ThreadsafeFunction<GlobalInputAction>;
