@@ -1,6 +1,6 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
-import type { GlobalInputAction } from '../index.js';
+import type { GlobalInputAction, GlobalInputActionType } from '../index.js';
 import { GlobalListener, Keyboard, Mouse, Position, SpecialKey, unicode, Window } from '../index.js';
 
 test('mouse move', async () => {
@@ -29,7 +29,7 @@ test('humanlike mouse move', async () => {
   strictEqual(finalPosition.y, 600);
 });
 
-test('multiple mouse tasks done simultaneously', async() => {
+test('multiple mouse tasks done simultaneously', async () => {
   const mouse = new Mouse();
 
   const results: Array<Error> = (await Promise.all([
@@ -45,29 +45,33 @@ test('key press', async () => {
   const keyboard = new Keyboard();
   const listener = new GlobalListener();
 
-  const pressPromiseA = new Promise<GlobalInputAction>(resolve => {
+  const pressPromiseA = new Promise<GlobalInputActionType>(resolve => {
     const unsubscribe = listener.subscribe((_err, action) => {
-      unsubscribe();
-      resolve(action);
+      if (action.type === 'KeyDown') {
+        unsubscribe();
+        resolve(action.value);
+      }
     });
   });
 
   keyboard.keyPress(unicode('a'));
   const pressAResult = await pressPromiseA;
   strictEqual(pressAResult.type, 'UnicodeKey');
-  strictEqual((pressAResult as any).field0.value, 'a');
+  strictEqual(pressAResult.key.value, 'a');
 
-  const pressPromiseBackspace = new Promise<GlobalInputAction>(resolve => {
+  const pressPromiseBackspace = new Promise<GlobalInputActionType>(resolve => {
     const unsubscribe = listener.subscribe((_err, action) => {
-      unsubscribe();
-      resolve(action);
+      if (action.type === 'KeyDown') {
+        unsubscribe();
+        resolve(action.value);
+      }
     });
   });
 
   keyboard.keyPress(SpecialKey.Backspace);
   const pressBackspaceResult = await pressPromiseBackspace;
   strictEqual(pressBackspaceResult.type, 'SpecialKey');
-  strictEqual((pressBackspaceResult as any).field0, SpecialKey.Backspace);
+  strictEqual(pressBackspaceResult.key, SpecialKey.Backspace);
 
   listener.close();
 });
