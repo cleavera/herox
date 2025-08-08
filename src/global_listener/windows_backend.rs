@@ -106,6 +106,9 @@ impl TryFrom<u32> for SpecialKey {
     match value {
       0x08 => Ok(SpecialKey::Backspace),
       0x09 => Ok(SpecialKey::Tab),
+      0x10 => Ok(SpecialKey::Shift),
+      0x11 => Ok(SpecialKey::Control),
+      0x12 => Ok(SpecialKey::Alt),
       0x13 => Ok(SpecialKey::Pause),
       0x1B => Ok(SpecialKey::Escape),
       0x20 => Ok(SpecialKey::Space),
@@ -114,6 +117,11 @@ impl TryFrom<u32> for SpecialKey {
       0x23 => Ok(SpecialKey::End),
       0x24 => Ok(SpecialKey::Home),
       0x2D => Ok(SpecialKey::Insert),
+      0x2E => Ok(SpecialKey::Delete),
+      0xA0 => Ok(SpecialKey::LShift),
+      0xA1 => Ok(SpecialKey::RShift),
+      0xA2 => Ok(SpecialKey::LControl),
+      0xA3 => Ok(SpecialKey::RControl),
       _ => Err(()),
     }
   }
