@@ -53,6 +53,17 @@ impl Image {
     ))
   }
 
+  #[napi(ts_return_type = "Promise<Array<Feature>>")]
+  pub fn get_features_from_color(
+    &self,
+    rgba_number: u32,
+  ) -> AsyncTask<AsyncGetFeaturesFromColor> {
+    AsyncTask::new(AsyncGetFeaturesFromColor::new(
+      rgba_number,
+      self.rgba_image.clone(),
+    ))
+  }
+
   #[napi(ts_return_type = "Promise<Array<Pixel>>")]
   pub fn find_feature(
     &self,
@@ -241,6 +252,68 @@ impl Task for AsyncFindRgbas {
     }
 
     Ok(positions)
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
+    Ok(output)
+  }
+}
+
+pub struct AsyncGetFeaturesFromColor {
+  rgba_number: u32,
+  rgba_image: RgbaImage,
+}
+
+impl AsyncGetFeaturesFromColor {
+  pub fn new(rgba_number: u32, rgba_image: RgbaImage) -> Self {
+    Self {
+      rgba_number,
+      rgba_image,
+    }
+  }
+}
+
+#[napi]
+impl Task for AsyncGetFeaturesFromColor {
+  type Output = Vec<Feature>;
+  type JsValue = Vec<Feature>;
+
+  fn compute(&mut self) -> Result<Self::Output, Error> {
+    let mut find_task = AsyncFindRgbas::new(self.rgba_number, self.rgba_image.clone());
+    let mut pixels = find_task.compute()?;
+
+    pixels.sort_by_key(|p| (p.x, p.y));
+
+    const MAX_DISTANCE: u32 = 5;
+    const MAX_DIST_SQ: i64 = (MAX_DISTANCE as i64) * (MAX_DISTANCE as i64);
+
+    let mut groups: Vec<Vec<Pixel>> = Vec::new();
+
+    for pixel in &pixels {
+      let mut found_group_for_pixel = false;
+      for group in &mut groups {
+        if group.iter().any(|gp| {
+          let dx = (gp.x as i64) - (pixel.x as i64);
+          let dy = (gp.y as i64) - (pixel.y as i64);
+          dx * dx + dy * dy <= MAX_DIST_SQ
+        }) {
+          group.push(pixel.clone());
+          found_group_for_pixel = true;
+          break;
+        }
+      }
+
+      if !found_group_for_pixel {
+        groups.push(vec![pixel.clone()]);
+      }
+    }
+
+    let features = groups
+      .into_iter()
+      .map(|g| Feature { pixels: g })
+      .collect();
+
+    Ok(features)
   }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue, Error> {
