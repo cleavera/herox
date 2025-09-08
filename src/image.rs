@@ -296,7 +296,21 @@ impl Task for AsyncGetFeaturesFromColor {
 
     let features = groups
       .into_iter()
-      .map(|g| Feature { pixels: g })
+      .map(|mut group| {
+        if group.is_empty() {
+          return Feature { pixels: group };
+        }
+
+        let min_x = group.iter().map(|p| p.x).min().unwrap_or(0);
+        let min_y = group.iter().map(|p| p.y).min().unwrap_or(0);
+
+        for pixel in &mut group {
+          pixel.x -= min_x;
+          pixel.y -= min_y;
+        }
+
+        Feature { pixels: group }
+      })
       .collect();
 
     Ok(features)
