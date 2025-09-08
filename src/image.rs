@@ -55,7 +55,7 @@ impl Image {
     AsyncTask::new(AsyncFindRgbas::new(
       rgba_number,
       self.rgba_image.clone(),
-      max_color_distance_percent.clone(),
+      max_color_distance_percent,
     ))
   }
 
@@ -68,7 +68,7 @@ impl Image {
     AsyncTask::new(AsyncGetFeaturesFromColor::new(
       rgba_number,
       self.rgba_image.clone(),
-      max_color_distance_percent.clone(),
+      max_color_distance_percent,
     ))
   }
 
@@ -217,13 +217,15 @@ impl Task for AsyncGetPixelRgba {
 pub struct AsyncFindRgbas {
   rgba_number: u32,
   rgba_image: RgbaImage,
+  max_color_distance_percent: f64,
 }
 
 impl AsyncFindRgbas {
-  pub fn new(rgba_number: u32, rgba_image: RgbaImage) -> Self {
+  pub fn new(rgba_number: u32, rgba_image: RgbaImage, max_color_distance_percent: f64) -> Self {
     Self {
       rgba_number,
       rgba_image,
+      max_color_distance_percent,
     }
   }
 }
@@ -234,11 +236,15 @@ impl Task for AsyncFindRgbas {
   type JsValue = Vec<Pixel>;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    let rgba = rgba_number_into_rgba(self.rgba_number);
+    const MAX_COLOR_DISTANCE: f64 = 510.0; // Using alpha: sqrt(255^2 * 4)
+    let actual_color_tolerance_value = MAX_COLOR_DISTANCE * self.max_color_distance_percent;
     let mut positions = Vec::new();
 
     for (x, y, pixel) in self.rgba_image.enumerate_pixels() {
-      if *pixel == rgba {
+      let pixel_rgba_u32 = rgba_into_rgba_number(pixel);
+      let distance = color_distance(self.rgba_number, pixel_rgba_u32, true);
+
+      if distance <= actual_color_tolerance_value {
         positions.push(Pixel {
           x,
           y,
@@ -281,22 +287,12 @@ impl Task for AsyncGetFeaturesFromColor {
   type JsValue = Vec<FeatureMatch>;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    let mut pixels = Vec::new();
-    const MAX_COLOR_DISTANCE: f64 = 510.0; // Using alpha: sqrt(255^2 * 4)
-    let actual_color_tolerance_value = MAX_COLOR_DISTANCE * self.max_color_distance_percent;
-
-    for (x, y, pixel) in self.rgba_image.enumerate_pixels() {
-      let pixel_rgba_u32 = rgba_into_rgba_number(pixel);
-      let distance = color_distance(self.rgba_number, pixel_rgba_u32, true);
-
-      if distance <= actual_color_tolerance_value {
-        pixels.push(Pixel {
-          x,
-          y,
-          rgba: pixel_rgba_u32,
-        });
-      }
-    }
+    let mut pixels = AsyncFindRgbas::new(
+      self.rgba_number,
+      self.rgba_image.clone(),
+      self.max_color_distance_percent,
+    )
+    .compute()?;
 
     pixels.sort_by_key(|p| (p.x, p.y));
 
