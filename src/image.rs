@@ -63,12 +63,14 @@ impl Image {
   pub fn get_features_from_color(
     &self,
     rgba_number: u32,
-    max_color_distance_percent: f64
+    max_color_distance_percent: f64,
+    max_grouping_distance: u32,
   ) -> AsyncTask<AsyncGetFeaturesFromColor> {
     AsyncTask::new(AsyncGetFeaturesFromColor::new(
       rgba_number,
       self.rgba_image.clone(),
       max_color_distance_percent,
+      max_grouping_distance,
     ))
   }
 
@@ -265,6 +267,7 @@ pub struct AsyncGetFeaturesFromColor {
   rgba_number: u32,
   rgba_image: RgbaImage,
   max_color_distance_percent: f64,
+  max_grouping_distance: u32,
 }
 
 impl AsyncGetFeaturesFromColor {
@@ -272,11 +275,13 @@ impl AsyncGetFeaturesFromColor {
     rgba_number: u32,
     rgba_image: RgbaImage,
     max_color_distance_percent: f64,
+    max_grouping_distance: u32,
   ) -> Self {
     Self {
       rgba_number,
       rgba_image,
       max_color_distance_percent,
+      max_grouping_distance,
     }
   }
 }
@@ -294,8 +299,7 @@ impl Task for AsyncGetFeaturesFromColor {
     )
     .compute()?;
 
-    const MAX_DISTANCE: u32 = 5;
-    const MAX_DIST_SQ: i64 = (MAX_DISTANCE as i64) * (MAX_DISTANCE as i64);
+    let max_dist_sq: i64 = (self.max_grouping_distance as i64) * (self.max_grouping_distance as i64);
 
     let mut parent: Vec<usize> = (0..pixels.len()).collect();
     fn find_set(i: usize, parent: &mut Vec<usize>) -> usize {
@@ -317,7 +321,7 @@ impl Task for AsyncGetFeaturesFromColor {
       for j in (i + 1)..pixels.len() {
         let dx = (pixels[i].x as i64) - (pixels[j].x as i64);
         let dy = (pixels[i].y as i64) - (pixels[j].y as i64);
-        if dx * dx + dy * dy <= MAX_DIST_SQ {
+        if dx * dx + dy * dy <= max_dist_sq {
           unite_sets(i, j, &mut parent);
         }
       }
