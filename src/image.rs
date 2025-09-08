@@ -51,10 +51,11 @@ impl Image {
   }
 
   #[napi(ts_return_type = "Promise<Array<Pixel>>")]
-  pub fn find_rgbas(&self, rgba_number: u32) -> AsyncTask<AsyncFindRgbas> {
+  pub fn find_rgbas(&self, rgba_number: u32, max_color_distance_percent: f64) -> AsyncTask<AsyncFindRgbas> {
     AsyncTask::new(AsyncFindRgbas::new(
       rgba_number,
       self.rgba_image.clone(),
+      max_color_distance_percent.clone(),
     ))
   }
 
@@ -62,10 +63,12 @@ impl Image {
   pub fn get_features_from_color(
     &self,
     rgba_number: u32,
+    max_color_distance_percent: f64
   ) -> AsyncTask<AsyncGetFeaturesFromColor> {
     AsyncTask::new(AsyncGetFeaturesFromColor::new(
       rgba_number,
       self.rgba_image.clone(),
+      max_color_distance_percent.clone(),
     ))
   }
 
