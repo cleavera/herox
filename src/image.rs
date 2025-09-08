@@ -3,6 +3,7 @@ use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use std::collections::HashMap;
 
 #[napi(object)]
+#[derive(Clone)]
 pub struct Pixel {
   pub x: u32,
   pub y: u32,
