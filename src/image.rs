@@ -1,4 +1,3 @@
-use crate::position::Position;
 use image::{Rgba, RgbaImage};
 use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use std::collections::HashMap;
@@ -6,7 +5,8 @@ use std::collections::HashMap;
 #[napi(object)]
 pub struct FeatureMatch {
   pub feature: Feature,
-  pub position: Position,
+  pub x: u32,
+  pub y: u32,
 }
 
 #[napi(object)]
@@ -58,7 +58,7 @@ impl Image {
     ))
   }
 
-  #[napi(ts_return_type = "Promise<Array<Feature>>")]
+  #[napi(ts_return_type = "Promise<Array<FeatureMatch>>")]
   pub fn get_features_from_color(
     &self,
     rgba_number: u32,
@@ -328,18 +328,13 @@ impl Task for AsyncGetFeaturesFromColor {
         let min_x = group.iter().map(|p| p.x).min().unwrap();
         let min_y = group.iter().map(|p| p.y).min().unwrap();
 
-        let position = Position {
-          x: min_x as i32,
-          y: min_y as i32,
-        };
-
         for pixel in &mut group {
           pixel.x -= min_x;
           pixel.y -= min_y;
         }
 
         let feature = Feature { pixels: group };
-        FeatureMatch { feature, position }
+        FeatureMatch { feature, x: min_x, y: min_y }
       })
       .collect();
 
