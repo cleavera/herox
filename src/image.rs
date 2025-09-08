@@ -255,13 +255,19 @@ impl Task for AsyncFindRgbas {
 pub struct AsyncGetFeaturesFromColor {
   rgba_number: u32,
   rgba_image: RgbaImage,
+  max_color_distance_percent: f64,
 }
 
 impl AsyncGetFeaturesFromColor {
-  pub fn new(rgba_number: u32, rgba_image: RgbaImage) -> Self {
+  pub fn new(
+    rgba_number: u32,
+    rgba_image: RgbaImage,
+    max_color_distance_percent: f64,
+  ) -> Self {
     Self {
       rgba_number,
       rgba_image,
+      max_color_distance_percent,
     }
   }
 }
@@ -272,8 +278,22 @@ impl Task for AsyncGetFeaturesFromColor {
   type JsValue = Vec<FeatureMatch>;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    let mut find_task = AsyncFindRgbas::new(self.rgba_number, self.rgba_image.clone());
-    let mut pixels = find_task.compute()?;
+    let mut pixels = Vec::new();
+    const MAX_COLOR_DISTANCE: f64 = 510.0; // Using alpha: sqrt(255^2 * 4)
+    let actual_color_tolerance_value = MAX_COLOR_DISTANCE * self.max_color_distance_percent;
+
+    for (x, y, pixel) in self.rgba_image.enumerate_pixels() {
+      let pixel_rgba_u32 = rgba_into_rgba_number(pixel);
+      let distance = color_distance(self.rgba_number, pixel_rgba_u32, true);
+
+      if distance <= actual_color_tolerance_value {
+        pixels.push(Pixel {
+          x,
+          y,
+          rgba: pixel_rgba_u32,
+        });
+      }
+    }
 
     pixels.sort_by_key(|p| (p.x, p.y));
 
