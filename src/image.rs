@@ -1,6 +1,13 @@
+use crate::position::Position;
 use image::{Rgba, RgbaImage};
 use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use std::collections::HashMap;
+
+#[napi(object)]
+pub struct FeatureMatch {
+  pub feature: Feature,
+  pub position: Position,
+}
 
 #[napi(object)]
 #[derive(Clone)]
@@ -261,8 +268,8 @@ impl AsyncGetFeaturesFromColor {
 
 #[napi]
 impl Task for AsyncGetFeaturesFromColor {
-  type Output = Vec<Feature>;
-  type JsValue = Vec<Feature>;
+  type Output = Vec<FeatureMatch>;
+  type JsValue = Vec<FeatureMatch>;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
     let mut find_task = AsyncFindRgbas::new(self.rgba_number, self.rgba_image.clone());
@@ -296,20 +303,23 @@ impl Task for AsyncGetFeaturesFromColor {
 
     let features = groups
       .into_iter()
+      .filter(|g| !g.is_empty())
       .map(|mut group| {
-        if group.is_empty() {
-          return Feature { pixels: group };
-        }
+        let min_x = group.iter().map(|p| p.x).min().unwrap();
+        let min_y = group.iter().map(|p| p.y).min().unwrap();
 
-        let min_x = group.iter().map(|p| p.x).min().unwrap_or(0);
-        let min_y = group.iter().map(|p| p.y).min().unwrap_or(0);
+        let position = Position {
+          x: min_x as i32,
+          y: min_y as i32,
+        };
 
         for pixel in &mut group {
           pixel.x -= min_x;
           pixel.y -= min_y;
         }
 
-        Feature { pixels: group }
+        let feature = Feature { pixels: group };
+        FeatureMatch { feature, position }
       })
       .collect();
 
