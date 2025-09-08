@@ -287,42 +287,50 @@ impl Task for AsyncGetFeaturesFromColor {
   type JsValue = Vec<FeatureMatch>;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    let mut pixels = AsyncFindRgbas::new(
+    let pixels = AsyncFindRgbas::new(
       self.rgba_number,
       self.rgba_image.clone(),
       self.max_color_distance_percent,
     )
     .compute()?;
 
-    pixels.sort_by_key(|p| (p.x, p.y));
-
     const MAX_DISTANCE: u32 = 5;
     const MAX_DIST_SQ: i64 = (MAX_DISTANCE as i64) * (MAX_DISTANCE as i64);
 
-    let mut groups: Vec<Vec<Pixel>> = Vec::new();
-
-    for pixel in &pixels {
-      let mut found_group_for_pixel = false;
-      for group in &mut groups {
-        if group.iter().any(|gp| {
-          let dx = (gp.x as i64) - (pixel.x as i64);
-          let dy = (gp.y as i64) - (pixel.y as i64);
-          dx * dx + dy * dy <= MAX_DIST_SQ
-        }) {
-          group.push(pixel.clone());
-          found_group_for_pixel = true;
-          break;
-        }
+    let mut parent: Vec<usize> = (0..pixels.len()).collect();
+    fn find_set(i: usize, parent: &mut Vec<usize>) -> usize {
+      if parent[i] == i {
+        return i;
       }
-
-      if !found_group_for_pixel {
-        groups.push(vec![pixel.clone()]);
+      parent[i] = find_set(parent[i], parent);
+      parent[i]
+    }
+    fn unite_sets(i: usize, j: usize, parent: &mut Vec<usize>) {
+      let i_id = find_set(i, parent);
+      let j_id = find_set(j, parent);
+      if i_id != j_id {
+        parent[j_id] = i_id;
       }
     }
 
+    for i in 0..pixels.len() {
+      for j in (i + 1)..pixels.len() {
+        let dx = (pixels[i].x as i64) - (pixels[j].x as i64);
+        let dy = (pixels[i].y as i64) - (pixels[j].y as i64);
+        if dx * dx + dy * dy <= MAX_DIST_SQ {
+          unite_sets(i, j, &mut parent);
+        }
+      }
+    }
+
+    let mut groups: HashMap<usize, Vec<Pixel>> = HashMap::new();
+    for (i, pixel) in pixels.into_iter().enumerate() {
+      let root = find_set(i, &mut parent);
+      groups.entry(root).or_default().push(pixel);
+    }
+
     let features = groups
-      .into_iter()
-      .filter(|g| !g.is_empty())
+      .into_values()
       .map(|mut group| {
         let min_x = group.iter().map(|p| p.x).min().unwrap();
         let min_y = group.iter().map(|p| p.y).min().unwrap();
