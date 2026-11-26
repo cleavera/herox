@@ -82,7 +82,7 @@ test('screen capture', async () => {
   const target = { x: Math.ceil(image.width / 2), y: Math.ceil(image.height / 2) };
 
   const pixel = await image.getPixelRgba(target.x, target.y);
-  const matchingPixels = await image.findRgbas(pixel);
+  const matchingPixels = await image.findRgbas(pixel, 0);
 
   strictEqual(matchingPixels.some(p => p.x === target.x && p.y === target.y), true);
 });
