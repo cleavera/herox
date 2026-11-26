@@ -240,6 +240,21 @@ impl MouseSync {
   }
 
   pub fn move_to(&mut self, x: i32, y: i32) -> Result<(), Error> {
+    self.move_cursor(x, y)
+  }
+
+  // enigo's absolute move only addresses the primary monitor on Windows
+  #[cfg(target_os = "windows")]
+  fn move_cursor(&mut self, x: i32, y: i32) -> Result<(), Error> {
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+    unsafe { SetCursorPos(x, y) }.map_err(|e| MouseError::new(&e.to_string()))?;
+
+    Ok(())
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  fn move_cursor(&mut self, x: i32, y: i32) -> Result<(), Error> {
     self
       .enigo
       .move_mouse(x, y, enigo::Coordinate::Abs)
