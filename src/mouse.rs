@@ -242,10 +242,39 @@ impl MouseSync {
   pub fn move_to(&mut self, x: i32, y: i32) -> Result<(), Error> {
     self
       .enigo
-      .move_mouse(x.max(0), y.max(0), enigo::Coordinate::Abs)
+      .move_mouse(x, y, enigo::Coordinate::Abs)
       .map_err(MouseError::from)?;
 
     Ok(())
+  }
+
+  #[cfg(target_os = "windows")]
+  fn desktop_bounds(&self) -> Result<(Position, Position), Error> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+      GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+      SM_YVIRTUALSCREEN,
+    };
+
+    let (left, top, width, height) = unsafe {
+      (
+        GetSystemMetrics(SM_XVIRTUALSCREEN),
+        GetSystemMetrics(SM_YVIRTUALSCREEN),
+        GetSystemMetrics(SM_CXVIRTUALSCREEN),
+        GetSystemMetrics(SM_CYVIRTUALSCREEN),
+      )
+    };
+
+    Ok((
+      Position::new(left, top),
+      Position::new(left + width - 1, top + height - 1),
+    ))
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  fn desktop_bounds(&self) -> Result<(Position, Position), Error> {
+    let (width, height) = self.enigo.main_display().map_err(MouseError::from)?;
+
+    Ok((Position::new(0, 0), Position::new(width, height)))
   }
 
   pub fn humanlike_move_to(&mut self, x: i32, y: i32, duration: u32) -> Result<(), Error> {
@@ -257,10 +286,7 @@ impl MouseSync {
     let mouse_position = self.get_position()?;
     let mut target_position = target.clone();
     let mut adjusted_duration = duration / step;
-    let (width, height) = self.enigo.main_display().map_err(MouseError::from)?;
-    let min_pos = Position::new(0, 0);
-
-    let max_pos = &min_pos + &Position::new(width, height);
+    let (min_pos, max_pos) = self.desktop_bounds()?;
 
     let distance = Position::distance(&mouse_position, &target_position);
     if distance > minimum_distance {
