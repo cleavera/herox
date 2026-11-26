@@ -2,6 +2,9 @@ use image::{Rgba, RgbaImage};
 use napi::{bindgen_prelude::AsyncTask, Env, Error, Task};
 use std::collections::HashMap;
 
+use crate::colour::{color_distance, rgba_into_rgba_number};
+use crate::feature_search::{find_feature, TemplatePixel};
+
 #[napi(object)]
 pub struct FeatureMatch {
   pub feature: Feature,
@@ -85,8 +88,6 @@ impl Image {
       feature,
       max_color_distance_percent,
       max_pixel_difference_percent,
-      self.width,
-      self.height,
       self.rgba_image.clone(),
     ))
   }
@@ -150,38 +151,6 @@ impl From<RgbaImage> for Image {
       height: value.height(),
       rgba_image: value,
     }
-  }
-}
-
-pub fn rgba_into_rgba_number(rgba: &Rgba<u8>) -> u32 {
-  ((rgba.0[0] as u32) << 24)
-    | ((rgba.0[1] as u32) << 16)
-    | ((rgba.0[2] as u32) << 8)
-    | (rgba.0[3] as u32)
-}
-
-pub fn rgba_number_into_rgba(rgba_number: u32) -> Rgba<u8> {
-  Rgba([
-    ((rgba_number >> 24) & 0xFF) as u8,
-    ((rgba_number >> 16) & 0xFF) as u8,
-    ((rgba_number >> 8) & 0xFF) as u8,
-    (rgba_number & 0xFF) as u8,
-  ])
-}
-
-fn color_distance(color1_u32: u32, color2_u32: u32, use_alpha: bool) -> f64 {
-  let rgba1 = rgba_number_into_rgba(color1_u32);
-  let rgba2 = rgba_number_into_rgba(color2_u32);
-
-  let dr = (rgba1.0[0] as f64) - (rgba2.0[0] as f64);
-  let dg = (rgba1.0[1] as f64) - (rgba2.0[1] as f64);
-  let db = (rgba1.0[2] as f64) - (rgba2.0[2] as f64);
-  let da = (rgba1.0[3] as f64) - (rgba2.0[3] as f64);
-
-  if use_alpha {
-    (dr.powi(2) + dg.powi(2) + db.powi(2) + da.powi(2)).sqrt()
-  } else {
-    (dr.powi(2) + dg.powi(2) + db.powi(2)).sqrt()
   }
 }
 
@@ -361,8 +330,6 @@ pub struct AsyncFindFeatures {
   feature: Feature,
   color_tolerance_percent: f64,
   max_mismatch_percent: f64,
-  width: u32,
-  height: u32,
   rgba_image: RgbaImage,
 }
 
@@ -371,16 +338,12 @@ impl AsyncFindFeatures {
     feature: Feature,
     color_tolerance_percent: f64,
     max_mismatch_percent: f64,
-    width: u32,
-    height: u32,
     rgba_image: RgbaImage,
   ) -> Self {
     Self {
       feature,
       color_tolerance_percent,
       max_mismatch_percent,
-      width,
-      height,
       rgba_image,
     }
   }
@@ -392,85 +355,30 @@ impl Task for AsyncFindFeatures {
   type JsValue = Vec<Pixel>;
 
   fn compute(&mut self) -> Result<Self::Output, Error> {
-    let mut found_top_lefts = Vec::new();
+    let template: Vec<TemplatePixel> = self
+      .feature
+      .pixels
+      .iter()
+      .map(|p| TemplatePixel {
+        x: p.x,
+        y: p.y,
+        rgba: p.rgba,
+      })
+      .collect();
 
-    if self.feature.pixels.is_empty() {
-      return Ok(found_top_lefts);
-    }
-
-    let min_feat_x = self.feature.pixels.iter().map(|p| p.x).min().unwrap_or(0);
-    let min_feat_y = self.feature.pixels.iter().map(|p| p.y).min().unwrap_or(0);
-    let max_feat_x = self.feature.pixels.iter().map(|p| p.x).max().unwrap_or(0);
-    let max_feat_y = self.feature.pixels.iter().map(|p| p.y).max().unwrap_or(0);
-
-    let feature_width = max_feat_x - min_feat_x + 1;
-    let feature_height = max_feat_y - min_feat_y + 1;
-
-    if feature_width > self.width || feature_height > self.height {
-      return Ok(found_top_lefts);
-    }
-
-    let max_color_distance: f64 = if true {
-      510.0 // sqrt(255*255 * 4)
-    } else {
-      441.67 // sqrt(255*255 * 3)
-    };
-    let actual_color_tolerance_value = max_color_distance * self.color_tolerance_percent;
-
-    let total_feature_pixels = self.feature.pixels.len() as f64;
-    let max_mismatches_count = (total_feature_pixels * self.max_mismatch_percent).round() as u32;
-
-    let use_alpha_for_comparison = true;
-
-    for start_y in 0..=(self.height - feature_height) {
-      for start_x in 0..=(self.width - feature_width) {
-        let mut current_mismatches = 0;
-
-        for feature_pixel in &self.feature.pixels {
-          let current_image_x = start_x + (feature_pixel.x - min_feat_x);
-          let current_image_y = start_y + (feature_pixel.y - min_feat_y);
-
-          let image_rgba_raw = self
-            .rgba_image
-            .get_pixel_checked(current_image_x, current_image_y);
-
-          match image_rgba_raw {
-            Some(img_pixel_rgba) => {
-              let img_pixel_rgba_u32 = rgba_into_rgba_number(img_pixel_rgba);
-              let distance = color_distance(
-                feature_pixel.rgba,
-                img_pixel_rgba_u32,
-                use_alpha_for_comparison,
-              );
-
-              if distance > actual_color_tolerance_value {
-                current_mismatches += 1;
-                if current_mismatches > max_mismatches_count {
-                  break;
-                }
-              }
-            }
-            None => {
-              current_mismatches += 1;
-              if current_mismatches > max_mismatches_count {
-                break;
-              }
-            }
-          }
-        }
-
-        if current_mismatches <= max_mismatches_count {
-          let top_left_pixel_rgba_raw = self.rgba_image.get_pixel(start_x, start_y);
-          let top_left_rgba_u32 = rgba_into_rgba_number(top_left_pixel_rgba_raw);
-
-          found_top_lefts.push(Pixel {
-            x: start_x,
-            y: start_y,
-            rgba: top_left_rgba_u32,
-          });
-        }
-      }
-    }
+    let found_top_lefts = find_feature(
+      &self.rgba_image,
+      &template,
+      self.color_tolerance_percent,
+      self.max_mismatch_percent,
+    )
+    .into_iter()
+    .map(|l| Pixel {
+      x: l.x,
+      y: l.y,
+      rgba: l.rgba,
+    })
+    .collect();
 
     Ok(found_top_lefts)
   }

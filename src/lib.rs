@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate napi_derive;
 
+mod colour;
+mod feature_search;
 pub mod image;
 pub mod keyboard;
 pub mod mouse;
